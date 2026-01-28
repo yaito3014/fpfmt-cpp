@@ -279,3 +279,51 @@ TEST_CASE("uscale")
     CHECK(u.floor().value == 70);
   }
 }
+
+TEST_CASE("format_base10")
+{
+  using yk::fpfmt::format_base10;
+  using yk::fpfmt::u64;
+
+  auto check = [](u64 x, char const* expected) {
+    char buf[21];
+    char* end = format_base10(buf, x);
+    *end = '\0';
+    INFO("x = " << x);
+    CHECK(std::string(buf) == expected);
+  };
+
+  // Single digits
+  check(0, "0");
+  check(1, "1");
+  check(5, "5");
+  check(9, "9");
+
+  // Two digits
+  check(10, "10");
+  check(42, "42");
+  check(99, "99");
+
+  // Three digits
+  check(100, "100");
+  check(123, "123");
+  check(999, "999");
+
+  // Various lengths
+  check(1000, "1000");
+  check(12345, "12345");
+  check(123456789, "123456789");
+
+  // Powers of 10
+  check(10, "10");
+  check(100, "100");
+  check(1000, "1000");
+  check(10000, "10000");
+  check(100000, "100000");
+  check(1000000, "1000000");
+  check(10000000000ULL, "10000000000");
+
+  // Large values
+  check(1234567890123456789ULL, "1234567890123456789");
+  check(0xFFFFFFFFFFFFFFFFULL, "18446744073709551615");  // max u64
+}

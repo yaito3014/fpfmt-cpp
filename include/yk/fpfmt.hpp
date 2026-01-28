@@ -786,7 +786,110 @@ inline unrounded uscale(u64 x, scaler c) noexcept
   return unrounded{f64repr{hm.high >> c.s | sticky}};
 }
 
+// format_base10 formats x as decimal digits into buf.
+// Returns pointer to one past the last digit written.
+// buf must have space for at least 20 digits (max u64 is 20 digits).
+// Based on formatBase10 from https://research.swtch.com/fp
+inline char* format_base10(char* buf, u64 x) noexcept
+{
+  static char const i2a[] =
+      "00010203040506070809"
+      "10111213141516171819"
+      "20212223242526272829"
+      "30313233343536373839"
+      "40414243444546474849"
+      "50515253545556575859"
+      "60616263646566676869"
+      "70717273747576777879"
+      "80818283848586878889"
+      "90919293949596979899";
 
+  // Determine number of digits (branchless)
+  // Table maps bit count to (digit count - 1) * 4, with threshold adjustment
+  static u64 const pow10[] = {
+      0,                        // 10^0 (unused, for index alignment)
+      10,                       // 10^1
+      100,                      // 10^2
+      1000,                     // 10^3
+      10000,                    // 10^4
+      100000,                   // 10^5
+      1000000,                  // 10^6
+      10000000,                 // 10^7
+      100000000,                // 10^8
+      1000000000,               // 10^9
+      10000000000,              // 10^10
+      100000000000,             // 10^11
+      1000000000000,            // 10^12
+      10000000000000,           // 10^13
+      100000000000000,          // 10^14
+      1000000000000000,         // 10^15
+      10000000000000000,        // 10^16
+      100000000000000000,       // 10^17
+      1000000000000000000,      // 10^18
+      10000000000000000000ull,  // 10^19
+  };
+  // Maps bit position (0-63) to approximate digit count
+  // digit_count ≈ floor(bits * log10(2)) + 1 = floor(bits * 0.30103) + 1
+  static int const bits_to_digits[] = {
+      1,  1,  1,  1,  2,  2,  2,  3,  3,  3,  4,  4,  4,  4,  5,  5,  5,  6,  6,  6,  7,  7,  7,  7,  8,  8,  8,  9,  9,  9,  10, 10,
+      10, 10, 11, 11, 11, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14, 15, 15, 15, 16, 16, 16, 16, 17, 17, 17, 18, 18, 18, 19, 19, 19, 19,
+  };
+  int bits = 64 - __builtin_clzll(x | 1);
+  int nd = bits_to_digits[bits - 1] + (x >= pow10[bits_to_digits[bits - 1]]);
+
+  char* end = buf + nd;
+  int i = nd;
+
+  // Process 8 digits (4 pairs) at a time
+  while (i >= 8) {
+    u64 x3210 = x % 100000000;
+    x /= 100000000;
+    u64 x32 = x3210 / 10000;
+    u64 x10 = x3210 % 10000;
+    u64 x0 = (x10 % 100) * 2;
+    u64 x1 = (x10 / 100) * 2;
+    u64 x2 = (x32 % 100) * 2;
+    u64 x3 = (x32 / 100) * 2;
+    buf[i - 1] = i2a[x0 + 1];
+    buf[i - 2] = i2a[x0];
+    buf[i - 3] = i2a[x1 + 1];
+    buf[i - 4] = i2a[x1];
+    buf[i - 5] = i2a[x2 + 1];
+    buf[i - 6] = i2a[x2];
+    buf[i - 7] = i2a[x3 + 1];
+    buf[i - 8] = i2a[x3];
+    i -= 8;
+  }
+
+  // Process 4 digits (2 pairs) if remaining
+  if (i >= 4) {
+    u64 x10 = x % 10000;
+    x /= 10000;
+    u64 x0 = (x10 % 100) * 2;
+    u64 x1 = (x10 / 100) * 2;
+    buf[i - 1] = i2a[x0 + 1];
+    buf[i - 2] = i2a[x0];
+    buf[i - 3] = i2a[x1 + 1];
+    buf[i - 4] = i2a[x1];
+    i -= 4;
+  }
+
+  // Process 2 digits if remaining
+  if (i >= 2) {
+    u64 x0 = (x % 100) * 2;
+    x /= 100;
+    buf[i - 1] = i2a[x0 + 1];
+    buf[i - 2] = i2a[x0];
+    i -= 2;
+  }
+
+  // Process final digit if remaining
+  if (i > 0) {
+    buf[0] = char('0' + x);
+  }
+
+  return end;
+}
 
 }  // namespace fpfmt
 
