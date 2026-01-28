@@ -8,29 +8,25 @@ namespace fpfmt {
 using u64 = std::uint64_t;
 using f64 = double;
 
-struct f64repr {
-  u64 value;
-};
-
 struct unrounded {
-  f64repr data;
+  u64 data;
 
-  f64repr floor() const noexcept { return f64repr{data.value >> 2}; }
-  f64repr round_half_down() const noexcept { return f64repr{(data.value + 1) >> 2}; }
-  f64repr round() const noexcept { return f64repr{((data.value + 1 + ((data.value >> 2) & 1)) >> 2)}; }
-  f64repr round_half_up() const noexcept { return f64repr{(data.value + 2) >> 2}; }
-  f64repr ceil() const noexcept { return f64repr{(data.value + 3) >> 2}; }
+  u64 floor() const noexcept { return data >> 2; }
+  u64 round_half_down() const noexcept { return (data + 1) >> 2; }
+  u64 round() const noexcept { return ((data + 1 + ((data >> 2) & 1)) >> 2); }
+  u64 round_half_up() const noexcept { return (data + 2) >> 2; }
+  u64 ceil() const noexcept { return (data + 3) >> 2; }
 
-  unrounded nudge(int delta) const noexcept { return unrounded{f64repr{data.value + delta}}; }
+  unrounded nudge(int delta) const noexcept { return unrounded{data + delta}; }
 
-  friend unrounded operator/(unrounded u, u64 d) noexcept { return unrounded{f64repr{(u.data.value / d) | (u.data.value & 1) | (u.data.value % d != 0)}}; }
+  friend unrounded operator/(unrounded u, u64 d) noexcept { return unrounded{(u.data / d) | (u.data & 1) | (u.data % d != 0)}; }
 };
 
 inline unrounded unround(f64 x) noexcept
 {
   f64 const quad = 4 * x;
   f64 const floored = std::floor(quad);
-  return unrounded{f64repr{u64(floored) | (floored != quad)}};
+  return unrounded{u64(floored) | (floored != quad)};
 }
 
 inline int log10pow2(int x) noexcept { return (x * 78913) >> 18; }
@@ -783,10 +779,8 @@ inline unrounded uscale(u64 x, scaler c) noexcept
     sticky = hm.low - m2.high > 1;
     hm.high -= hm.low < m2.high;
   }
-  return unrounded{f64repr{hm.high >> c.s | sticky}};
+  return unrounded{hm.high >> c.s | sticky};
 }
-
-
 
 }  // namespace fpfmt
 

@@ -9,64 +9,64 @@ TEST_CASE("unrounded")
   // rounding
   {
     yk::fpfmt::unrounded const u = yk::fpfmt::unround(6);
-    CHECK(u.floor().value == 6);
-    CHECK(u.round_half_down().value == 6);
-    CHECK(u.round().value == 6);
-    CHECK(u.round_half_up().value == 6);
-    CHECK(u.ceil().value == 6);
+    CHECK(u.floor() == 6);
+    CHECK(u.round_half_down() == 6);
+    CHECK(u.round() == 6);
+    CHECK(u.round_half_up() == 6);
+    CHECK(u.ceil() == 6);
   }
   {
     yk::fpfmt::unrounded const u = yk::fpfmt::unround(6.25);
-    CHECK(u.floor().value == 6);
-    CHECK(u.round_half_down().value == 6);
-    CHECK(u.round().value == 6);
-    CHECK(u.round_half_up().value == 6);
-    CHECK(u.ceil().value == 7);
+    CHECK(u.floor() == 6);
+    CHECK(u.round_half_down() == 6);
+    CHECK(u.round() == 6);
+    CHECK(u.round_half_up() == 6);
+    CHECK(u.ceil() == 7);
   }
   {
     yk::fpfmt::unrounded const u = yk::fpfmt::unround(6.5);
-    CHECK(u.floor().value == 6);
-    CHECK(u.round_half_down().value == 6);
-    CHECK(u.round().value == 6);
-    CHECK(u.round_half_up().value == 7);
-    CHECK(u.ceil().value == 7);
+    CHECK(u.floor() == 6);
+    CHECK(u.round_half_down() == 6);
+    CHECK(u.round() == 6);
+    CHECK(u.round_half_up() == 7);
+    CHECK(u.ceil() == 7);
   }
   {
     yk::fpfmt::unrounded const u = yk::fpfmt::unround(6.75);
-    CHECK(u.floor().value == 6);
-    CHECK(u.round_half_down().value == 7);
-    CHECK(u.round().value == 7);
-    CHECK(u.round_half_up().value == 7);
-    CHECK(u.ceil().value == 7);
+    CHECK(u.floor() == 6);
+    CHECK(u.round_half_down() == 7);
+    CHECK(u.round() == 7);
+    CHECK(u.round_half_up() == 7);
+    CHECK(u.ceil() == 7);
   }
 
   // division
   {
     yk::fpfmt::unrounded const u = yk::fpfmt::unround(15.1);
-    CHECK((u / 6).round().value == 3);
+    CHECK((u / 6).round() == 3);
   }
 
   // nudging
   {
     yk::fpfmt::unrounded const u = yk::fpfmt::unround(15);
-    CHECK(u.nudge(-1).floor().value == 14);
-    CHECK(u.floor().value == 15);
-    CHECK(u.ceil().value == 15);
-    CHECK(u.nudge(+1).ceil().value == 16);
+    CHECK(u.nudge(-1).floor() == 14);
+    CHECK(u.floor() == 15);
+    CHECK(u.ceil() == 15);
+    CHECK(u.nudge(+1).ceil() == 16);
   }
   {
     yk::fpfmt::unrounded const u = yk::fpfmt::unround(15.1);
-    CHECK(u.nudge(-1).floor().value == 15);
-    CHECK(u.floor().value == 15);
-    CHECK(u.ceil().value == 16);
-    CHECK(u.nudge(+1).ceil().value == 16);
+    CHECK(u.nudge(-1).floor() == 15);
+    CHECK(u.floor() == 15);
+    CHECK(u.ceil() == 16);
+    CHECK(u.nudge(+1).ceil() == 16);
   }
   {
     yk::fpfmt::unrounded const u = yk::fpfmt::unround(15.9);
-    CHECK(u.nudge(-1).floor().value == 15);
-    CHECK(u.floor().value == 15);
-    CHECK(u.ceil().value == 16);
-    CHECK(u.nudge(+1).ceil().value == 16);
+    CHECK(u.nudge(-1).floor() == 15);
+    CHECK(u.floor() == 15);
+    CHECK(u.ceil() == 16);
+    CHECK(u.nudge(+1).ceil() == 16);
   }
 }
 
@@ -213,7 +213,7 @@ TEST_CASE("uscale")
     int p = 0;
     auto c = prescale(-63, p, log2pow10(p));
     auto u = uscale(one, c);
-    CHECK(u.floor().value == 1);
+    CHECK(u.floor() == 1);
   }
 
   // 1 * 2^(-63) * 10^1 = 10
@@ -221,7 +221,7 @@ TEST_CASE("uscale")
     int p = 1;
     auto c = prescale(-63, p, log2pow10(p));
     auto u = uscale(one, c);
-    CHECK(u.floor().value == 10);
+    CHECK(u.floor() == 10);
   }
 
   // 1 * 2^(-63) * 10^2 = 100
@@ -229,7 +229,7 @@ TEST_CASE("uscale")
     int p = 2;
     auto c = prescale(-63, p, log2pow10(p));
     auto u = uscale(one, c);
-    CHECK(u.floor().value == 100);
+    CHECK(u.floor() == 100);
   }
 
   // 1 * 2^(-63) * 10^3 = 1000
@@ -237,7 +237,7 @@ TEST_CASE("uscale")
     int p = 3;
     auto c = prescale(-63, p, log2pow10(p));
     auto u = uscale(one, c);
-    CHECK(u.floor().value == 1000);
+    CHECK(u.floor() == 1000);
   }
 
   // Test with different mantissa: 2 * 10^2 = 200
@@ -246,7 +246,7 @@ TEST_CASE("uscale")
     int p = 2;
     auto c = prescale(-62, p, log2pow10(p));  // e = -62 means x * 2^(-62) = 2^63 * 2^(-62) = 2
     auto u = uscale(two, c);
-    CHECK(u.floor().value == 200);
+    CHECK(u.floor() == 200);
   }
 
   // Test larger value: 5 * 10^2 = 500
@@ -256,7 +256,7 @@ TEST_CASE("uscale")
     int p = 2;
     auto c = prescale(-61, p, log2pow10(p));  // e = -61 to get 5 * 2^61 * 2^(-61) = 5
     auto u = uscale(five, c);
-    CHECK(u.floor().value == 500);
+    CHECK(u.floor() == 500);
   }
 
   // Test: 3 * 10^3 = 3000
@@ -266,7 +266,7 @@ TEST_CASE("uscale")
     int p = 3;
     auto c = prescale(-62, p, log2pow10(p));
     auto u = uscale(three, c);
-    CHECK(u.floor().value == 3000);
+    CHECK(u.floor() == 3000);
   }
 
   // Test: 7 * 10^1 = 70
@@ -276,6 +276,6 @@ TEST_CASE("uscale")
     int p = 1;
     auto c = prescale(-61, p, log2pow10(p));
     auto u = uscale(seven, c);
-    CHECK(u.floor().value == 70);
+    CHECK(u.floor() == 70);
   }
 }
