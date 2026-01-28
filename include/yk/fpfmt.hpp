@@ -26,7 +26,7 @@ struct unrounded {
   friend unrounded operator/(unrounded u, u64 d) noexcept { return unrounded{f64repr{(u.data.value / d) | (u.data.value & 1) | (u.data.value % d != 0)}}; }
 };
 
-inline unrounded unround(f64 x)
+inline unrounded unround(f64 x) noexcept
 {
   f64 const quad = 4 * x;
   f64 const floored = std::floor(quad);
