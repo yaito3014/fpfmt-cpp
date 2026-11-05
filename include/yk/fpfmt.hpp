@@ -7,12 +7,23 @@
 #include <cstddef>
 #include <cstring>
 
+#if defined(_MSC_VER) && !defined(__SIZEOF_INT128__) && ((defined(_M_X64) && !defined(_M_ARM64EC)) || defined(_M_ARM64))
+#include <intrin.h>
+#endif
+
 namespace yk {
 
 namespace fpfmt {
 
 using u64 = std::uint64_t;
 using f64 = double;
+
+// __SIZEOF_INT128__ is defined by GCC, Clang (including clang-cl), and compilers based on them,
+// only on targets where unsigned __int128 is usable.
+// __extension__ silences -Wpedantic's "ISO C++ does not support '__int128'".
+#if defined(__SIZEOF_INT128__)
+__extension__ typedef unsigned __int128 u128;
+#endif
 
 struct unrounded {
   u64 data;
@@ -859,7 +870,7 @@ inline scaler prescale(int e, int p, int lp) noexcept
   return scaler{pow10table[p - pow10_min], -(e + lp + 3)};
 }
 
-inline u64x2 mul64(u64 x, u64 y) noexcept
+inline u64x2 mul64_portable(u64 x, u64 y) noexcept
 {
   u64 const x_lo = x & 0xFFFFFFFF;
   u64 const x_hi = x >> 32;
@@ -876,6 +887,22 @@ inline u64x2 mul64(u64 x, u64 y) noexcept
   u64 const low = (mid << 32) | (lo_lo & 0xFFFFFFFF);
 
   return u64x2{high, low};
+}
+
+inline u64x2 mul64(u64 x, u64 y) noexcept
+{
+#if defined(__SIZEOF_INT128__)
+  u128 const r = u128(x) * y;
+  return u64x2{u64(r >> 64), u64(r)};
+#elif defined(_MSC_VER) && defined(_M_X64) && !defined(_M_ARM64EC)
+  u64 high;
+  u64 const low = _umul128(x, y, &high);
+  return u64x2{high, low};
+#elif defined(_MSC_VER) && defined(_M_ARM64)
+  return u64x2{__umulh(x, y), x * y};
+#else
+  return mul64_portable(x, y);
+#endif
 }
 
 // uscale returns unround(x * 2**e * 10**p).
