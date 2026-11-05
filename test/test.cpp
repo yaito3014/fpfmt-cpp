@@ -2,7 +2,12 @@
 
 #include <yk/fpfmt.hpp>
 
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
+#include <string>
 
 TEST_CASE("unrounded")
 {
@@ -277,5 +282,278 @@ TEST_CASE("uscale")
     auto c = prescale(-61, p, log2pow10(p));
     auto u = uscale(seven, c);
     CHECK(u.floor() == 70);
+  }
+}
+
+TEST_CASE("uscale low-bits mask")
+{
+  using namespace yk::fpfmt;
+
+  // Regression test: Go's `hi&(1<<(c.s&63)-1)` is `hi & ((1 << s) - 1)` (Go's << binds tighter than -).
+  // Testing only bit s-1 instead made this case round 2.58e-26 down to 2e-26.
+  f64 const f = f64_from_bits(0x3aa0000000000000);  // 2**-85 = 2.5849394142282115e-26
+  decimal const r = fixed_width(f, 1);
+  CHECK(r.d == 3);
+  CHECK(r.p == -26);
+}
+
+TEST_CASE("unpack64 / pack64")
+{
+  using namespace yk::fpfmt;
+
+  {
+    unpacked const u = unpack64(1.0);
+    CHECK(u.m == u64(1) << 63);
+    CHECK(u.e == -63);
+    CHECK(pack64(u.m >> 11, u.e + 11) == 1.0);
+  }
+  {
+    unpacked const u = unpack64(-1.5);  // sign is ignored
+    CHECK(u.m == u64(3) << 62);
+    CHECK(u.e == -63);
+  }
+  {
+    // smallest subnormal: 2**-1074
+    unpacked const u = unpack64(f64_from_bits(1));
+    CHECK(u.m == u64(1) << 63);
+    CHECK(u.e == -1074 - 63);
+    CHECK(pack64(1, -1074) == f64_from_bits(1));
+  }
+  {
+    unpacked const u = unpack64(f64_from_bits(0x7fefffffffffffff));  // DBL_MAX
+    CHECK(u.m == ~u64(0) << 11);
+    CHECK(u.e == 1023 - 63);
+  }
+}
+
+TEST_CASE("unrounded rsh")
+{
+  using yk::fpfmt::unround;
+  CHECK(unround(12).rsh(1).data == unround(6).data);
+  CHECK(unround(13).rsh(1).data == unround(6.5).data);
+  CHECK(unround(13).rsh(2).data == unround(3.25).data);  // 3.25 -> 3.0+
+  CHECK(unround(12.5).rsh(1).data == unround(6.25).data);
+}
+
+TEST_CASE("digits")
+{
+  using yk::fpfmt::digits;
+  using yk::fpfmt::u64;
+  CHECK(digits(1) == 1);
+  CHECK(digits(9) == 1);
+  CHECK(digits(10) == 2);
+  CHECK(digits(99) == 2);
+  CHECK(digits(100) == 3);
+  CHECK(digits(12345678901234567890u) == 20);
+  for (int n = 1; n <= 19; n++) {
+    u64 const p = yk::fpfmt::uint64pow10(n);
+    CHECK(digits(p - 1) == n);
+    CHECK(digits(p) == n + 1);
+  }
+}
+
+namespace {
+
+std::string fmt(yk::fpfmt::decimal r)
+{
+  char buf[32];
+  int const n = yk::fpfmt::format(buf, r.d, r.p, yk::fpfmt::digits(r.d));
+  return std::string(buf, n);
+}
+
+}  // namespace
+
+TEST_CASE("format")
+{
+  using yk::fpfmt::decimal;
+  CHECK(fmt(decimal{1, 0}) == "1e+00");
+  CHECK(fmt(decimal{125, -5}) == "1.25e-03");
+  CHECK(fmt(decimal{5, -324}) == "5e-324");
+  CHECK(fmt(decimal{17976931348623157u, 292}) == "1.7976931348623157e+308");
+  CHECK(fmt(decimal{1234567890123456789u, 0}) == "1.234567890123456789e+18");
+  CHECK(fmt(decimal{12345678901234567890u, -10}) == "1.2345678901234567890e+09");
+}
+
+TEST_CASE("shortest")
+{
+  using namespace yk::fpfmt;
+
+  CHECK(fmt(shortest(1.0)) == "1e+00");
+  CHECK(fmt(shortest(0.1)) == "1e-01");
+  CHECK(fmt(shortest(0.3)) == "3e-01");
+  CHECK(fmt(shortest(0.1 + 0.2)) == "3.0000000000000004e-01");
+  CHECK(fmt(shortest(123.456)) == "1.23456e+02");
+  CHECK(fmt(shortest(1e23)) == "1e+23");
+  CHECK(fmt(shortest(f64_from_bits(1))) == "5e-324");
+  CHECK(fmt(shortest(f64_from_bits(0x000fffffffffffff))) == "2.225073858507201e-308");
+  CHECK(fmt(shortest(f64_from_bits(0x0010000000000000))) == "2.2250738585072014e-308");
+  CHECK(fmt(shortest(f64_from_bits(0x7fefffffffffffff))) == "1.7976931348623157e+308");
+  CHECK(fmt(shortest(-2.5)) == "2.5e+00");  // sign is ignored
+
+  decimal const r = shortest(1000.0);
+  CHECK(r.d == 1);
+  CHECK(r.p == 3);
+}
+
+TEST_CASE("fixed_width")
+{
+  using namespace yk::fpfmt;
+
+  {
+    decimal const r = fixed_width(std::ldexp(0x118352262653f8, 19 - 52), 7);  // 0x1.18352262653f8p+19
+    CHECK(r.d == 5738651);
+    CHECK(r.p == -1);
+  }
+  CHECK(fmt(fixed_width(1.0, 1)) == "1e+00");
+  CHECK(fmt(fixed_width(1.0, 3)) == "1.00e+00");
+  CHECK(fmt(fixed_width(0.1, 17)) == "1.0000000000000001e-01");
+  CHECK(fmt(fixed_width(0.1, 18)) == "1.00000000000000006e-01");
+  CHECK(fmt(fixed_width(9.5, 1)) == "1e+01");    // round half to even, carries into a new digit
+  CHECK(fmt(fixed_width(8.5, 1)) == "8e+00");    // round half to even
+  CHECK(fmt(fixed_width(1234.5, 4)) == "1.234e+03");
+  CHECK(fmt(fixed_width(99.99, 2)) == "1.0e+02");
+}
+
+TEST_CASE("parse")
+{
+  using namespace yk::fpfmt;
+
+  CHECK(parse(0, 0) == 0.0);
+  CHECK(parse(1, 0) == 1.0);
+  CHECK(parse(1, -1) == 0.1);
+  CHECK(parse(3, -1) == 0.3);
+  CHECK(parse(123456, -3) == 123.456);
+  CHECK(parse(17976931348623157u, 292) == f64_from_bits(0x7fefffffffffffff));
+  CHECK(parse(5, -324) == f64_from_bits(1));
+  CHECK(parse(2, -324) == 0.0);  // below half of the smallest subnormal
+  CHECK(parse(3, -324) == f64_from_bits(1));
+  CHECK(parse(22250738585072014u, -324) == f64_from_bits(0x0010000000000000));
+  CHECK(parse(9007199254740993u, 0) == 9007199254740992.0);  // 2**53 + 1: tie rounds to even
+  CHECK(parse(9007199254740995u, 0) == 9007199254740996.0);  // 2**53 + 3: tie rounds to even
+  CHECK(parse(10000000000000000000u, 0) == 1e19);
+
+  // Out-of-range exponents (the Go original requires p in [-348, 347]).
+  CHECK(parse(1, -400) == 0.0);
+  CHECK(parse(10000000000000000000u, -349) == 0.0);
+  CHECK(parse(1, 400) == HUGE_VAL);
+  CHECK(parse(18, 307) == HUGE_VAL);
+  CHECK(parse(17976931348623159u, 292) == HUGE_VAL);
+}
+
+TEST_CASE("parse_text")
+{
+  using namespace yk::fpfmt;
+
+  struct ok_case {
+    char const* s;
+    f64 want;
+  };
+  ok_case const oks[] = {
+      {"1", 1.0},
+      {"1.", 1.0},
+      {".5", 0.5},
+      {"1.5", 1.5},
+      {"1e-5", 1e-5},
+      {"1E10", 1e10},
+      {"12.34e+56", 12.34e+56},
+      {"0.000", 0.0},
+      {"1234567890123456789", 1234567890123456789.0},
+      {"1.234567890123456789", 1.234567890123456789},
+      {"123456789012345678.9", 123456789012345678.9},
+      {"1e-0", 1.0},
+      {"9e307", 9e307},
+      {"2.2250738585072014e-308", 2.2250738585072014e-308},
+  };
+  for (ok_case const& c : oks) {
+    CAPTURE(c.s);
+    parse_result const r = parse_text(c.s, c.s + std::strlen(c.s));
+    CHECK(r.ok);
+    CHECK(r.value == c.want);
+  }
+
+  char const* const bads[] = {
+      "",
+      ".",
+      "e5",
+      "1e",
+      "1e+",
+      "1e1000",
+      "abc",
+      "1x",
+      "-1",
+      "+1",
+      "12345678901234567890",
+      "1.2345678901234567890",
+      "1.5 ",
+  };
+  for (char const* s : bads) {
+    CAPTURE(s);
+    parse_result const r = parse_text(s, s + std::strlen(s));
+    CHECK_FALSE(r.ok);
+  }
+}
+
+namespace {
+
+// splitmix64, for deterministic pseudo-random test inputs.
+struct splitmix64 {
+  std::uint64_t state;
+  std::uint64_t operator()()
+  {
+    std::uint64_t z = (state += 0x9e3779b97f4a7c15);
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
+    return z ^ (z >> 31);
+  }
+};
+
+// check compares fixed_width and shortest against the C library,
+// whose printf and strtod are correctly rounded on glibc.
+void check_against_libc(double f)
+{
+  using namespace yk::fpfmt;
+  CAPTURE(f);
+  char want[64];
+
+  // shortest round trips through both our parse and strtod, and no shorter fixed width does.
+  decimal const s = shortest(f);
+  int const nd = digits(s.d);
+  CHECK(parse(s.d, s.p) == f);
+  std::string const str = fmt(s);
+  CHECK(std::strtod(str.c_str(), nullptr) == f);
+  if (nd > 1) {
+    std::snprintf(want, sizeof want, "%.*e", nd - 2, f);
+    CHECK(std::strtod(want, nullptr) != f);
+  }
+
+  // fixed_width matches printf's correctly rounded %e.
+  for (int n : {1, 2, 6, 15, 16, 17, 18}) {
+    CAPTURE(n);
+    std::snprintf(want, sizeof want, "%.*e", n - 1, f);
+    decimal const r = fixed_width(f, n);
+    CHECK(fmt(r) == want);
+    if (n >= 17) CHECK(parse(r.d, r.p) == f);
+  }
+}
+
+}  // namespace
+
+TEST_CASE("against libc")
+{
+  using namespace yk::fpfmt;
+
+  for (int e = -1074; e <= 1023; e++) check_against_libc(std::ldexp(1.0, e));
+  for (int p = -323; p <= 308; p++) check_against_libc(std::strtod(("1e" + std::to_string(p)).c_str(), nullptr));
+
+  splitmix64 rng{12345};
+  for (int i = 0; i < 20000; i++) {
+    u64 b = rng() & ~(u64(1) << 63);
+    if ((b >> 52) == 0x7ff || b == 0) continue;
+    check_against_libc(f64_from_bits(b));
+  }
+  for (int i = 0; i < 2000; i++) {
+    u64 b = rng() & ((u64(1) << 52) - 1);  // subnormal
+    if (b == 0) continue;
+    check_against_libc(f64_from_bits(b));
   }
 }

@@ -1,5 +1,11 @@
+#ifndef YK_FPFMT_HPP
+#define YK_FPFMT_HPP
+
+#include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <cstddef>
+#include <cstring>
 
 namespace yk {
 
@@ -17,10 +23,16 @@ struct unrounded {
   u64 round_half_up() const noexcept { return (data + 2) >> 2; }
   u64 ceil() const noexcept { return (data + 3) >> 2; }
 
-  unrounded nudge(int delta) const noexcept { return unrounded{data + delta}; }
+  unrounded nudge(int delta) const noexcept { return unrounded{data + u64(delta)}; }
+
+  // rsh returns u >> s, preserving the sticky bit. s must be in [0, 63].
+  unrounded rsh(int s) const noexcept { return unrounded{(data >> s) | (data & 1) | ((data & ((u64(1) << s) - 1)) != 0)}; }
 
   friend unrounded operator/(unrounded u, u64 d) noexcept { return unrounded{(u.data / d) | (u.data & 1) | (u.data % d != 0)}; }
 };
+
+// unmin returns the minimum unrounded that rounds to x.
+inline unrounded unmin(u64 x) noexcept { return unrounded{(x << 2) - 2}; }
 
 inline unrounded unround(f64 x) noexcept
 {
@@ -29,8 +41,105 @@ inline unrounded unround(f64 x) noexcept
   return unrounded{u64(floored) | (floored != quad)};
 }
 
+// log10pow2(x) returns floor(log10(2**x)) = floor(x * log10(2)).
 inline int log10pow2(int x) noexcept { return (x * 78913) >> 18; }
+
+// log2pow10(x) returns floor(log2(10**x)) = floor(x * log2(10)).
 inline int log2pow10(int x) noexcept { return (x * 108853) >> 15; }
+
+// bit_len64 returns the minimum number of bits required to represent x (0 for x == 0).
+inline int bit_len64(u64 x) noexcept
+{
+#if defined(__GNUC__) || defined(__clang__)
+  return x == 0 ? 0 : 64 - __builtin_clzll(x);
+#else
+  int n = 0;
+  if (x >> 32) { x >>= 32; n += 32; }
+  if (x >> 16) { x >>= 16; n += 16; }
+  if (x >> 8) { x >>= 8; n += 8; }
+  if (x >> 4) { x >>= 4; n += 4; }
+  if (x >> 2) { x >>= 2; n += 2; }
+  if (x >> 1) { x >>= 1; n += 1; }
+  return n + int(x);
+#endif
+}
+
+inline u64 rotr64(u64 x, int k) noexcept { return (x >> k) | (x << (64 - k)); }
+
+inline u64 f64_to_bits(f64 f) noexcept
+{
+  u64 b;
+  std::memcpy(&b, &f, sizeof b);
+  return b;
+}
+
+inline f64 f64_from_bits(u64 b) noexcept
+{
+  f64 f;
+  std::memcpy(&f, &b, sizeof f);
+  return f;
+}
+
+struct unpacked {
+  u64 m;
+  int e;
+};
+
+// unpack64 returns m, e such that f = m * 2**e, with m left-justified (high bit set).
+// The caller is expected to have handled 0, NaN, and +-Inf already.
+// The sign of f is ignored.
+inline unpacked unpack64(f64 f) noexcept
+{
+  int const shift = 64 - 53;
+  int const min_exp = -(1074 + shift);
+  u64 const b = f64_to_bits(f);
+  u64 m = (u64(1) << 63) | ((b & ((u64(1) << 52) - 1)) << shift);
+  int e = int((b >> 52) & ((u64(1) << shift) - 1));
+  if (e == 0) {
+    m &= ~(u64(1) << 63);
+    e = min_exp;
+    int const s = 64 - bit_len64(m);
+    return unpacked{m << s, e - s};
+  }
+  return unpacked{m, (e - 1) + min_exp};
+}
+
+// pack64 takes m, e and returns f = m * 2**e.
+// It assumes the caller has provided a 53-bit mantissa m
+// and an exponent that is in range for the mantissa.
+inline f64 pack64(u64 m, int e) noexcept
+{
+  if ((m & (u64(1) << 52)) == 0) return f64_from_bits(m);
+  return f64_from_bits((m & ~(u64(1) << 52)) | (u64(1075 + e) << 52));
+}
+
+// uint64pow10(x) returns 10**x for x in [0, 19].
+inline u64 uint64pow10(int x) noexcept
+{
+  static u64 const table[] = {
+      1u,
+      10u,
+      100u,
+      1000u,
+      10000u,
+      100000u,
+      1000000u,
+      10000000u,
+      100000000u,
+      1000000000u,
+      10000000000u,
+      100000000000u,
+      1000000000000u,
+      10000000000000u,
+      100000000000000u,
+      1000000000000000u,
+      10000000000000000u,
+      100000000000000000u,
+      1000000000000000000u,
+      10000000000000000000u,
+  };
+  return table[x];
+}
 
 struct u64x2 {
   u64 high;
@@ -42,12 +151,14 @@ struct scaler {
   int s;
 };
 
+constexpr int pow10_min = -348;
+constexpr int pow10_max = 347;
+
 // prescale returns the scaling constants for e, p.
-// lp must be log2pow10(p).
+// lp must be log2pow10(p). p must be in [pow10_min, pow10_max].
 inline scaler prescale(int e, int p, int lp) noexcept
 {
-  static int const pow10Min = -348;
-  static u64x2 pow10table[] = {
+  static u64x2 const pow10table[] = {
       {0xfa8fd5a0081c0289, 0xe8cd3796329f1bac},  // 1e-348 * 2**1284
       {0x9c99e58405118196, 0xf18042bddfa3714b},  // 1e-347 * 2**1280
       {0xc3c05ee50655e1fb, 0xade0536d578c4d9e},  // 1e-346 * 2**1277
@@ -745,7 +856,7 @@ inline scaler prescale(int e, int p, int lp) noexcept
       {0xa7655d1d21039120, 0x9071ee70f0f1de6a},  // 1e346 * 2**-1022
       {0xd13eb46469447568, 0xb48e6a0d2d2e5604},  // 1e347 * 2**-1025
   };
-  return scaler{pow10table[p - pow10Min], -(e + lp + 3)};
+  return scaler{pow10table[p - pow10_min], -(e + lp + 3)};
 }
 
 inline u64x2 mul64(u64 x, u64 y) noexcept
@@ -774,14 +885,313 @@ inline unrounded uscale(u64 x, scaler c) noexcept
 {
   u64x2 hm = mul64(x, c.pm.high);
   bool sticky = true;
-  if ((hm.high & (u64(1) << ((c.s & 63) - 1))) == 0) {
+  if ((hm.high & ((u64(1) << (c.s & 63)) - 1)) == 0) {
     u64x2 m2 = mul64(x, c.pm.low);
     sticky = hm.low - m2.high > 1;
     hm.high -= hm.low < m2.high;
   }
-  return unrounded{hm.high >> c.s | sticky};
+  // c.s can exceed 63 when Parse produces a subnormal result; the shifted value is then 0.
+  return unrounded{(c.s < 64 ? hm.high >> c.s : 0) | u64(sticky)};
+}
+
+// decimal represents the value d * 10**p.
+struct decimal {
+  u64 d;
+  int p;
+};
+
+// fixed_width returns the n-digit decimal form of f as d * 10**p.
+// n can be at most 18. f must be finite and non-zero; its sign is ignored.
+inline decimal fixed_width(f64 f, int n) noexcept
+{
+  assert(n <= 18 && "too many digits");
+  unpacked const up = unpack64(f);
+  int p = n - 1 - log10pow2(up.e + 63);
+  unrounded const u = uscale(up.m, prescale(up.e, p, log2pow10(p)));
+  u64 d = u.round();
+  if (d >= uint64pow10(n)) {
+    d = (u / 10).round();
+    p = p - 1;
+  }
+  return decimal{d, -p};
+}
+
+// parse rounds d * 10**p to the nearest f64.
+// d can have at most 19 digits.
+//
+// Unlike the Go original, which requires p to be within the range of its power-of-ten table
+// and assumes the result does not overflow, this function returns 0 for underflow and +Inf for overflow.
+inline f64 parse(u64 d, int p) noexcept
+{
+  assert(d <= 10000000000000000000u && "too many digits");
+  if (d == 0 || p < pow10_min) return 0;  // d * 10**p < 1e20 * 1e-349 rounds to 0
+  if (p > pow10_max) return HUGE_VAL;
+
+  int const b = bit_len64(d);
+  int const lp = log2pow10(p);
+  int e = 53 - b - lp;
+  if (e > 1074) e = 1074;
+  unrounded u = uscale(d << (64 - b), prescale(e - (64 - b), p, lp));
+
+  // This block is branch-free code for:
+  //	if (u.round() >= 1<<53) {
+  //		u = u.rsh(1);
+  //		e = e - 1;
+  //	}
+  int const s = u.data >= unmin(u64(1) << 53).data;
+  u = unrounded{(u.data >> s) | (u.data & 1)};
+  e = e - s;
+
+  if (1075 - e >= 0x7ff) return HUGE_VAL;
+  return pack64(u.round(), -e);
+}
+
+struct parse_result {
+  f64 value;
+  bool ok;
+};
+
+// parse_text parses the decimal string [first, last)
+// and returns the nearest floating point value.
+// It returns {0, false} if the input is malformed.
+inline parse_result parse_text(char const* first, char const* last) noexcept
+{
+  parse_result const fail = {0, false};
+  auto const is_digit = [](char c) noexcept { return static_cast<unsigned char>(c - '0') <= 9; };
+  std::ptrdiff_t const len = last - first;
+
+  // Read digits.
+  std::ptrdiff_t const max_digits = 19;
+  u64 d = 0;     // decimal value of digits
+  int frac = 0;  // count of digits after decimal point
+  std::ptrdiff_t i = 0;
+  for (; i < len && is_digit(first[i]); i++) d = d * 10 + u64(first[i] - '0');
+  if (i > max_digits) return fail;  // too many digits
+  if (i < len && first[i] == '.') {
+    i++;
+    for (; i < len && is_digit(first[i]); i++) {
+      d = d * 10 + u64(first[i] - '0');
+      frac++;
+    }
+    if (i == 1 || i > max_digits + 1) return fail;  // no digits or too many digits
+  }
+  if (i == 0) return fail;  // no digits
+
+  // Read exponent.
+  int p = 0;
+  if (i < len && (first[i] == 'e' || first[i] == 'E')) {
+    i++;
+    int sign = +1;
+    if (i < len) {
+      if (first[i] == '-') {
+        sign = -1;
+        i++;
+      } else if (first[i] == '+') {
+        i++;
+      }
+    }
+    if (i >= len || len - i > 3) return fail;  // missing or too large exponent
+    for (; i < len && is_digit(first[i]); i++) p = p * 10 + (first[i] - '0');
+    p *= sign;
+  }
+  if (i != len) return fail;  // junk on end
+  return parse_result{parse(d, p - frac), true};
+}
+
+// skewed computes the skewed footprint of m * 2**e,
+// which is floor(log10(3/4 * 2**e)) = floor(e*log10(2) - log10(4/3)).
+inline int skewed(int e) noexcept { return (e * 631305 - 261663) >> 21; }
+
+// trim_zeros removes trailing zeros from x * 10**p.
+// If x ends in k zeros, trim_zeros returns x/10**k, p+k.
+// It assumes that x ends in at most 16 zeros.
+inline decimal trim_zeros(u64 x, int p) noexcept
+{
+  u64 const max_u64 = ~u64(0);
+  u64 const inv5p8 = 0xc767074b22e90e21;  // inverse of 5**8
+  u64 const inv5p4 = 0xd288ce703afb7e91;  // inverse of 5**4
+  u64 const inv5p2 = 0x8f5c28f5c28f5c29;  // inverse of 5**2
+  u64 const inv5 = 0xcccccccccccccccd;    // inverse of 5
+
+  // Cut 1 zero, or else return.
+  u64 d = rotr64(x * inv5, 1);
+  if (d <= max_u64 / 10) {
+    x = d;
+    p += 1;
+  } else {
+    return decimal{x, p};
+  }
+
+  // Cut 8 zeros, then 4, then 2, then 1.
+  d = rotr64(x * inv5p8, 8);
+  if (d <= max_u64 / 100000000) {
+    x = d;
+    p += 8;
+  }
+  d = rotr64(x * inv5p4, 4);
+  if (d <= max_u64 / 10000) {
+    x = d;
+    p += 4;
+  }
+  d = rotr64(x * inv5p2, 2);
+  if (d <= max_u64 / 100) {
+    x = d;
+    p += 2;
+  }
+  d = rotr64(x * inv5, 1);
+  if (d <= max_u64 / 10) {
+    x = d;
+    p += 1;
+  }
+  return decimal{x, p};
+}
+
+// shortest computes the shortest formatting of f as d * 10**p,
+// using as few digits as possible that will still round trip
+// back to the original f64.
+// f must be finite and non-zero; its sign is ignored.
+// (This is Short in the Go original; "short" is a C++ keyword.)
+inline decimal shortest(f64 f) noexcept
+{
+  int const min_exp = -1085;
+
+  unpacked const up = unpack64(f);
+  u64 const m = up.m;
+  int const e = up.e;
+
+  int p;
+  u64 lo;
+  int z = 11;  // extra zero bits at bottom of m; 11 for 53-bit m
+  if (m == u64(1) << 63 && e > min_exp) {
+    p = -skewed(e + z);
+    lo = m - (u64(1) << (z - 2));  // lo = m - 1/4 * 2**(e+z)
+  } else {
+    if (e < min_exp) z = 11 + (min_exp - e);
+    p = -log10pow2(e + z);
+    lo = m - (u64(1) << (z - 1));  // lo = m - 1/2 * 2**(e+z)
+  }
+  u64 const hi = m + (u64(1) << (z - 1));  // hi = m + 1/2 * 2**(e+z)
+  int const odd = int(m >> z) & 1;
+
+  scaler const pre = prescale(e, p, log2pow10(p));
+  u64 const dmin = uscale(lo, pre).nudge(+odd).ceil();
+  u64 const dmax = uscale(hi, pre).nudge(-odd).floor();
+
+  u64 d = dmax / 10;
+  if (d * 10 >= dmin) return trim_zeros(d, -(p - 1));
+  d = dmin;
+  if (d < dmax) d = uscale(m, pre).round();
+  return decimal{d, -p};
+}
+
+// digits returns the number of decimal digits in d.
+inline int digits(u64 d) noexcept
+{
+  int const nd = log10pow2(bit_len64(d));
+  return nd + (d >= uint64pow10(nd));
+}
+
+// i2a is the formatting of 00..99 concatenated,
+// a lookup table for formatting [0, 99].
+inline char const* i2a() noexcept
+{
+  return "00010203040506070809"
+         "10111213141516171819"
+         "20212223242526272829"
+         "30313233343536373839"
+         "40414243444546474849"
+         "50515253545556575859"
+         "60616263646566676869"
+         "70717273747576777879"
+         "80818283848586878889"
+         "90919293949596979899";
+}
+
+// format_base10 formats the decimal representation of u into a[0, nd).
+// The caller is responsible for ensuring that nd is big enough to hold u.
+// If nd is too big, leading zeros will be filled in as needed.
+inline void format_base10(char* a, int nd, u64 u) noexcept
+{
+  char const* const t = i2a();
+  while (nd >= 8) {
+    // Format last 8 digits (4 pairs).
+    std::uint32_t const x3210 = std::uint32_t(u % 100000000);
+    u /= 100000000;
+    std::uint32_t const x32 = x3210 / 10000, x10 = x3210 % 10000;
+    std::uint32_t const x1 = (x10 / 100) * 2, x0 = (x10 % 100) * 2;
+    std::uint32_t const x3 = (x32 / 100) * 2, x2 = (x32 % 100) * 2;
+    a[nd - 1] = t[x0 + 1], a[nd - 2] = t[x0];
+    a[nd - 3] = t[x1 + 1], a[nd - 4] = t[x1];
+    a[nd - 5] = t[x2 + 1], a[nd - 6] = t[x2];
+    a[nd - 7] = t[x3 + 1], a[nd - 8] = t[x3];
+    nd -= 8;
+  }
+
+  std::uint32_t x = std::uint32_t(u);
+  if (nd >= 4) {
+    // Format last 4 digits (2 pairs).
+    std::uint32_t const x10 = x % 10000;
+    x /= 10000;
+    std::uint32_t const x1 = (x10 / 100) * 2, x0 = (x10 % 100) * 2;
+    a[nd - 1] = t[x0 + 1], a[nd - 2] = t[x0];
+    a[nd - 3] = t[x1 + 1], a[nd - 4] = t[x1];
+    nd -= 4;
+  }
+  if (nd >= 2) {
+    // Format last 2 digits.
+    std::uint32_t const x0 = (x % 100) * 2;
+    x /= 100;
+    a[nd - 1] = t[x0 + 1], a[nd - 2] = t[x0];
+    nd -= 2;
+  }
+  if (nd > 0) {
+    // Format final digit.
+    a[0] = char('0' + x);
+  }
+}
+
+// format formats d * 10**p into s in exponential notation (e.g. "1.25e-03").
+// The caller must pass nd set to the number of digits in d (see digits()),
+// and s must have room for at least nd + 6 characters (nd + 7 if nd > 1).
+// It returns the number of characters written to s. No terminating null is written.
+// (This is Fmt in the Go original.)
+inline int format(char* s, u64 d, int p, int nd) noexcept
+{
+  char const* const t = i2a();
+
+  // Put digits into s, leaving room for decimal point.
+  format_base10(s + 1, nd, d);
+  p += nd - 1;
+
+  // Move first digit up and insert decimal point.
+  s[0] = s[1];
+  int n = nd;
+  if (n > 1) {
+    s[1] = '.';
+    n++;
+  }
+
+  // Add 2- or 3-digit exponent.
+  s[n] = 'e';
+  if (p < 0) {
+    s[n + 1] = '-';
+    p = -p;
+  } else {
+    s[n + 1] = '+';
+  }
+  if (p < 100) {
+    s[n + 2] = t[p * 2];
+    s[n + 3] = t[p * 2 + 1];
+    return n + 4;
+  }
+  s[n + 2] = char('0' + p / 100);
+  s[n + 3] = t[(p % 100) * 2];
+  s[n + 4] = t[(p % 100) * 2 + 1];
+  return n + 5;
 }
 
 }  // namespace fpfmt
 
 }  // namespace yk
+
+#endif  // YK_FPFMT_HPP
