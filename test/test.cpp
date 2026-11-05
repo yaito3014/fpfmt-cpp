@@ -201,6 +201,33 @@ TEST_CASE("mul64")
   }
 }
 
+TEST_CASE("mul64 matches portable implementation")
+{
+  using yk::fpfmt::mul64;
+  using yk::fpfmt::mul64_portable;
+  using yk::fpfmt::u64;
+
+  u64 const edges[] = {0, 1, 2, 0xFFFFFFFF, 0x100000000, 0x8000000000000000, 0xFFFFFFFFFFFFFFFF, 0xcccccccccccccccd};
+  for (u64 const x : edges) {
+    for (u64 const y : edges) {
+      CAPTURE(x, y);
+      CHECK(mul64(x, y).high == mul64_portable(x, y).high);
+      CHECK(mul64(x, y).low == mul64_portable(x, y).low);
+    }
+  }
+
+  u64 state = 1;
+  for (int i = 0; i < 100000; i++) {
+    state = state * 6364136223846793005 + 1442695040888963407;
+    u64 const x = state;
+    state = state * 6364136223846793005 + 1442695040888963407;
+    u64 const y = state;
+    CAPTURE(x, y);
+    REQUIRE(mul64(x, y).high == mul64_portable(x, y).high);
+    REQUIRE(mul64(x, y).low == mul64_portable(x, y).low);
+  }
+}
+
 TEST_CASE("uscale")
 {
   using yk::fpfmt::log2pow10;
