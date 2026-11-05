@@ -162,8 +162,8 @@ struct scaler {
   int s;
 };
 
-int const pow10_min = -348;
-int const pow10_max = 347;
+constexpr int pow10_min = -348;
+constexpr int pow10_max = 347;
 
 // prescale returns the scaling constants for e, p.
 // lp must be log2pow10(p). p must be in [pow10_min, pow10_max].
