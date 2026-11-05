@@ -2,11 +2,18 @@
 
 #include <yk/fpfmt.hpp>
 
+#if defined(__has_include)
+#if __has_include(<version>)
+#include <version>
+#endif
+#endif
+
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <string>
 
 TEST_CASE("constexpr pure functions")
@@ -32,6 +39,108 @@ TEST_CASE("constexpr pure functions")
   static_assert(skewed(0) == -1, "");
   static_assert(skewed(1) == 0, "");
   static_assert(i2a()[2 * 42] == '4' && i2a()[2 * 42 + 1] == '2', "");
+
+  CHECK(true);
+}
+
+// Feature conditions for the constexpr tests, stated independently of the header's own gating macros.
+#if defined(__cpp_constexpr) && __cpp_constexpr >= 201304L
+#define YK_FPFMT_TEST_CONSTEXPR14
+// mul64 uses MSVC intrinsics only when unsigned __int128 is unavailable.
+#if defined(__SIZEOF_INT128__) || !defined(_MSC_VER) || defined(__cpp_lib_is_constant_evaluated)
+#define YK_FPFMT_TEST_CONSTEXPR_MUL64
+#endif
+#endif
+#if defined(__cpp_lib_bitops) && defined(__cpp_lib_bit_cast) && defined(YK_FPFMT_TEST_CONSTEXPR_MUL64)
+#define YK_FPFMT_TEST_CONSTEXPR_FP
+#endif
+
+namespace {
+
+#if defined(YK_FPFMT_TEST_CONSTEXPR14)
+constexpr bool format_equals(yk::fpfmt::u64 d, int p, int nd, char const* want)
+{
+  char buf[32] = {};
+  int const n = yk::fpfmt::format(buf, d, p, nd);
+  for (int i = 0; i < n; i++) {
+    if (buf[i] != want[i]) return false;
+  }
+  return want[n] == '\0';
+}
+#endif
+
+#if defined(YK_FPFMT_TEST_CONSTEXPR_FP)
+constexpr yk::fpfmt::parse_result parse_cstr(char const* s)
+{
+  char const* last = s;
+  while (*last != '\0') ++last;
+  return yk::fpfmt::parse_text(s, last);
+}
+#endif
+
+}  // namespace
+
+TEST_CASE("constexpr table and float functions")
+{
+  using namespace yk::fpfmt;
+
+  // C++11
+  static_assert(unround(6).data == 24, "");
+  static_assert(unround(6.001).data == 25, "");
+  static_assert(unround(6.5).data == 26, "");
+  static_assert(unround(6.75).data == 27, "");
+  static_assert(uint64pow10(0) == 1, "");
+  static_assert(uint64pow10(19) == 10000000000000000000u, "");
+  static_assert(prescale(0, -1, log2pow10(-1)).pm.high == 0xcccccccccccccccd, "");
+  static_assert(prescale(0, -1, log2pow10(-1)).pm.low == 0x3333333333333333, "");
+  static_assert(prescale(0, -1, log2pow10(-1)).s == 1, "");
+
+#if defined(YK_FPFMT_TEST_CONSTEXPR14)
+  static_assert(mul64_portable(~u64(0), ~u64(0)).high == ~u64(1), "");
+  static_assert(mul64_portable(~u64(0), ~u64(0)).low == 1, "");
+  static_assert(trim_zeros(1200, 0).d == 12, "");
+  static_assert(trim_zeros(1200, 0).p == 2, "");
+  static_assert(format_equals(125, -5, 3, "1.25e-03"), "");
+  static_assert(format_equals(17976931348623157u, 292, 17, "1.7976931348623157e+308"), "");
+  static_assert(format_equals(5, -324, 1, "5e-324"), "");
+#endif
+
+#if defined(YK_FPFMT_TEST_CONSTEXPR_MUL64)
+  static_assert(mul64(~u64(0), ~u64(0)).high == ~u64(1), "");
+  static_assert(mul64(~u64(0), ~u64(0)).low == 1, "");
+  static_assert(uscale(u64(1) << 63, prescale(-63, 2, log2pow10(2))).floor() == 100, "");
+#endif
+
+#if defined(__cpp_lib_bitops)
+  static_assert(bit_len64(0) == 0, "");
+  static_assert(bit_len64(1) == 1, "");
+  static_assert(bit_len64(~u64(0)) == 64, "");
+  static_assert(digits(0) == 1, "");
+  static_assert(digits(12345) == 5, "");
+#endif
+
+#if defined(__cpp_lib_bit_cast)
+  static_assert(f64_to_bits(1.0) == 0x3ff0000000000000, "");
+  static_assert(f64_from_bits(0x3ff0000000000000) == 1.0, "");
+  static_assert(pack64(u64(1) << 52, -52) == 1.0, "");
+  static_assert(pack64(1, -1074) == f64_from_bits(1), "");
+#endif
+
+#if defined(YK_FPFMT_TEST_CONSTEXPR_FP)
+  static_assert(unpack64(1.0).m == u64(1) << 63, "");
+  static_assert(unpack64(1.0).e == -63, "");
+  static_assert(unpack64(f64_from_bits(1)).e == -1074 - 63, "");
+  static_assert(shortest(0.1).d == 1, "");
+  static_assert(shortest(0.1).p == -1, "");
+  static_assert(shortest(0.1 + 0.2).d == 30000000000000004u, "");
+  static_assert(fixed_width(0.1, 17).d == 10000000000000001u, "");
+  static_assert(fixed_width(0.1, 17).p == -17, "");
+  static_assert(parse(123456, -3) == 123.456, "");
+  static_assert(parse(1, 400) == std::numeric_limits<f64>::infinity(), "");
+  static_assert(parse_cstr("1.5e3").ok, "");
+  static_assert(parse_cstr("1.5e3").value == 1500.0, "");
+  static_assert(!parse_cstr("1x").ok, "");
+#endif
 
   CHECK(true);
 }

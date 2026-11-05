@@ -2,13 +2,60 @@
 #define YK_FPFMT_HPP
 
 #include <cassert>
-#include <cmath>
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
+#include <limits>
+#include <type_traits>
+
+#if defined(__has_include)
+#if __has_include(<version>)
+#include <version>
+#endif
+#endif
+
+#if defined(__cpp_lib_bitops) || defined(__cpp_lib_bit_cast)
+#include <bit>
+#endif
 
 #if defined(_MSC_VER) && !defined(__SIZEOF_INT128__) && ((defined(_M_X64) && !defined(_M_ARM64EC)) || defined(_M_ARM64))
+#define YK_FPFMT_MUL64_MSVC_INTRINSICS
 #include <intrin.h>
+#endif
+
+// Each YK_FPFMT_CONSTEXPR_* macro expands to constexpr when the features the function needs are available,
+// and to inline otherwise.
+#if defined(__cpp_constexpr) && __cpp_constexpr >= 201304L
+#define YK_FPFMT_CONSTEXPR14 constexpr
+#else
+#define YK_FPFMT_CONSTEXPR14 inline
+#endif
+
+#if defined(__cpp_lib_bitops)
+#define YK_FPFMT_CONSTEXPR_BITOPS constexpr
+#else
+#define YK_FPFMT_CONSTEXPR_BITOPS inline
+#endif
+
+#if defined(__cpp_lib_bit_cast)
+#define YK_FPFMT_CONSTEXPR_BIT_CAST constexpr
+#else
+#define YK_FPFMT_CONSTEXPR_BIT_CAST inline
+#endif
+
+// The MSVC intrinsics are not constexpr, so constant evaluation must be detected to avoid them.
+#if defined(__cpp_constexpr) && __cpp_constexpr >= 201304L && (!defined(YK_FPFMT_MUL64_MSVC_INTRINSICS) || defined(__cpp_lib_is_constant_evaluated))
+#define YK_FPFMT_CONSTEXPR_MUL64 constexpr
+#define YK_FPFMT_HAS_CONSTEXPR_MUL64
+#else
+#define YK_FPFMT_CONSTEXPR_MUL64 inline
+#endif
+
+// For functions that need all of the above (unpack64, fixed_width, shortest, parse, parse_text).
+#if defined(__cpp_lib_bitops) && defined(__cpp_lib_bit_cast) && defined(YK_FPFMT_HAS_CONSTEXPR_MUL64)
+#define YK_FPFMT_CONSTEXPR_FP constexpr
+#else
+#define YK_FPFMT_CONSTEXPR_FP inline
 #endif
 
 namespace yk {
@@ -45,12 +92,9 @@ struct unrounded {
 // unmin returns the minimum unrounded that rounds to x.
 constexpr unrounded unmin(u64 x) noexcept { return unrounded{(x << 2) - 2}; }
 
-inline unrounded unround(f64 x) noexcept
-{
-  f64 const quad = 4 * x;
-  f64 const floored = std::floor(quad);
-  return unrounded{u64(floored) | (floored != quad)};
-}
+// unround returns the unrounded form of x, which must be in [0, 2**62).
+// For non-negative values, conversion to u64 truncates, which is floor; std::floor is not constexpr before C++23.
+constexpr unrounded unround(f64 x) noexcept { return unrounded{u64(4 * x) | (f64(u64(4 * x)) != 4 * x)}; }
 
 // log10pow2(x) returns floor(log10(2**x)) = floor(x * log10(2)).
 constexpr int log10pow2(int x) noexcept { return (x * 78913) >> 18; }
@@ -59,9 +103,11 @@ constexpr int log10pow2(int x) noexcept { return (x * 78913) >> 18; }
 constexpr int log2pow10(int x) noexcept { return (x * 108853) >> 15; }
 
 // bit_len64 returns the minimum number of bits required to represent x (0 for x == 0).
-inline int bit_len64(u64 x) noexcept
+YK_FPFMT_CONSTEXPR_BITOPS int bit_len64(u64 x) noexcept
 {
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__cpp_lib_bitops)
+  return 64 - std::countl_zero(x);
+#elif defined(__GNUC__) || defined(__clang__)
   return x == 0 ? 0 : 64 - __builtin_clzll(x);
 #else
   int n = 0;
@@ -77,18 +123,26 @@ inline int bit_len64(u64 x) noexcept
 
 constexpr u64 rotr64(u64 x, int k) noexcept { return (x >> k) | (x << (64 - k)); }
 
-inline u64 f64_to_bits(f64 f) noexcept
+YK_FPFMT_CONSTEXPR_BIT_CAST u64 f64_to_bits(f64 f) noexcept
 {
+#if defined(__cpp_lib_bit_cast)
+  return std::bit_cast<u64>(f);
+#else
   u64 b;
   std::memcpy(&b, &f, sizeof b);
   return b;
+#endif
 }
 
-inline f64 f64_from_bits(u64 b) noexcept
+YK_FPFMT_CONSTEXPR_BIT_CAST f64 f64_from_bits(u64 b) noexcept
 {
+#if defined(__cpp_lib_bit_cast)
+  return std::bit_cast<f64>(b);
+#else
   f64 f;
   std::memcpy(&f, &b, sizeof f);
   return f;
+#endif
 }
 
 struct unpacked {
@@ -99,7 +153,7 @@ struct unpacked {
 // unpack64 returns m, e such that f = m * 2**e, with m left-justified (high bit set).
 // The caller is expected to have handled 0, NaN, and +-Inf already.
 // The sign of f is ignored.
-inline unpacked unpack64(f64 f) noexcept
+YK_FPFMT_CONSTEXPR_FP unpacked unpack64(f64 f) noexcept
 {
   int const shift = 64 - 53;
   int const min_exp = -(1074 + shift);
@@ -118,16 +172,32 @@ inline unpacked unpack64(f64 f) noexcept
 // pack64 takes m, e and returns f = m * 2**e.
 // It assumes the caller has provided a 53-bit mantissa m
 // and an exponent that is in range for the mantissa.
-inline f64 pack64(u64 m, int e) noexcept
+YK_FPFMT_CONSTEXPR_BIT_CAST f64 pack64(u64 m, int e) noexcept
 {
   if ((m & (u64(1) << 52)) == 0) return f64_from_bits(m);
   return f64_from_bits((m & ~(u64(1) << 52)) | (u64(1075 + e) << 52));
 }
 
-// uint64pow10(x) returns 10**x for x in [0, 19].
-inline u64 uint64pow10(int x) noexcept
-{
-  static u64 const table[] = {
+struct u64x2 {
+  u64 high;
+  u64 low;
+};
+
+struct scaler {
+  u64x2 pm;
+  int s;
+};
+
+constexpr int pow10_min = -348;
+constexpr int pow10_max = 347;
+
+// tables holds lookup tables as static data members of a class template,
+// so that inline functions in every translation unit refer to the same objects before C++17's inline variables.
+// The array bounds are explicit because Clang rejects reading these arrays in constant expressions otherwise.
+template<class = void>
+struct tables {
+  // pow10_u64[x] is 10**x.
+  static constexpr u64 pow10_u64[20] = {
       1u,
       10u,
       100u,
@@ -149,27 +219,9 @@ inline u64 uint64pow10(int x) noexcept
       1000000000000000000u,
       10000000000000000000u,
   };
-  return table[x];
-}
 
-struct u64x2 {
-  u64 high;
-  u64 low;
-};
-
-struct scaler {
-  u64x2 pm;
-  int s;
-};
-
-constexpr int pow10_min = -348;
-constexpr int pow10_max = 347;
-
-// prescale returns the scaling constants for e, p.
-// lp must be log2pow10(p). p must be in [pow10_min, pow10_max].
-inline scaler prescale(int e, int p, int lp) noexcept
-{
-  static u64x2 const pow10table[] = {
+  // pow10_128[p - pow10_min] holds the 128-bit mantissa of 10**p, scaled so the high bit is set.
+  static constexpr u64x2 pow10_128[pow10_max - pow10_min + 1] = {
       {0xfa8fd5a0081c0289, 0xe8cd3796329f1bac},  // 1e-348 * 2**1284
       {0x9c99e58405118196, 0xf18042bddfa3714b},  // 1e-347 * 2**1280
       {0xc3c05ee50655e1fb, 0xade0536d578c4d9e},  // 1e-346 * 2**1277
@@ -867,10 +919,23 @@ inline scaler prescale(int e, int p, int lp) noexcept
       {0xa7655d1d21039120, 0x9071ee70f0f1de6a},  // 1e346 * 2**-1022
       {0xd13eb46469447568, 0xb48e6a0d2d2e5604},  // 1e347 * 2**-1025
   };
-  return scaler{pow10table[p - pow10_min], -(e + lp + 3)};
-}
+};
 
-inline u64x2 mul64_portable(u64 x, u64 y) noexcept
+#if !defined(__cpp_inline_variables)
+template<class T>
+constexpr u64 tables<T>::pow10_u64[20];
+template<class T>
+constexpr u64x2 tables<T>::pow10_128[pow10_max - pow10_min + 1];
+#endif
+
+// uint64pow10(x) returns 10**x for x in [0, 19].
+constexpr u64 uint64pow10(int x) noexcept { return tables<>::pow10_u64[x]; }
+
+// prescale returns the scaling constants for e, p.
+// lp must be log2pow10(p). p must be in [pow10_min, pow10_max].
+constexpr scaler prescale(int e, int p, int lp) noexcept { return scaler{tables<>::pow10_128[p - pow10_min], -(e + lp + 3)}; }
+
+YK_FPFMT_CONSTEXPR14 u64x2 mul64_portable(u64 x, u64 y) noexcept
 {
   u64 const x_lo = x & 0xFFFFFFFF;
   u64 const x_hi = x >> 32;
@@ -889,17 +954,22 @@ inline u64x2 mul64_portable(u64 x, u64 y) noexcept
   return u64x2{high, low};
 }
 
-inline u64x2 mul64(u64 x, u64 y) noexcept
+YK_FPFMT_CONSTEXPR_MUL64 u64x2 mul64(u64 x, u64 y) noexcept
 {
 #if defined(__SIZEOF_INT128__)
   u128 const r = u128(x) * y;
   return u64x2{u64(r >> 64), u64(r)};
-#elif defined(_MSC_VER) && defined(_M_X64) && !defined(_M_ARM64EC)
+#elif defined(YK_FPFMT_MUL64_MSVC_INTRINSICS)
+#if defined(__cpp_lib_is_constant_evaluated)
+  if (std::is_constant_evaluated()) return mul64_portable(x, y);
+#endif
+#if defined(_M_ARM64)
+  return u64x2{__umulh(x, y), x * y};
+#else
   u64 high;
   u64 const low = _umul128(x, y, &high);
   return u64x2{high, low};
-#elif defined(_MSC_VER) && defined(_M_ARM64)
-  return u64x2{__umulh(x, y), x * y};
+#endif
 #else
   return mul64_portable(x, y);
 #endif
@@ -908,7 +978,7 @@ inline u64x2 mul64(u64 x, u64 y) noexcept
 // uscale returns unround(x * 2**e * 10**p).
 // The caller should pass c = prescale(e, p, log2pow10(p))
 // and should have left-justified x so its high bit is set.
-inline unrounded uscale(u64 x, scaler c) noexcept
+YK_FPFMT_CONSTEXPR_MUL64 unrounded uscale(u64 x, scaler c) noexcept
 {
   u64x2 hm = mul64(x, c.pm.high);
   bool sticky = true;
@@ -929,7 +999,7 @@ struct decimal {
 
 // fixed_width returns the n-digit decimal form of f as d * 10**p.
 // n can be at most 18. f must be finite and non-zero; its sign is ignored.
-inline decimal fixed_width(f64 f, int n) noexcept
+YK_FPFMT_CONSTEXPR_FP decimal fixed_width(f64 f, int n) noexcept
 {
   assert(n <= 18 && "too many digits");
   unpacked const up = unpack64(f);
@@ -948,11 +1018,11 @@ inline decimal fixed_width(f64 f, int n) noexcept
 //
 // Unlike the Go original, which requires p to be within the range of its power-of-ten table
 // and assumes the result does not overflow, this function returns 0 for underflow and +Inf for overflow.
-inline f64 parse(u64 d, int p) noexcept
+YK_FPFMT_CONSTEXPR_FP f64 parse(u64 d, int p) noexcept
 {
   assert(d <= 10000000000000000000u && "too many digits");
   if (d == 0 || p < pow10_min) return 0;  // d * 10**p < 1e20 * 1e-349 rounds to 0
-  if (p > pow10_max) return HUGE_VAL;
+  if (p > pow10_max) return std::numeric_limits<f64>::infinity();
 
   int const b = bit_len64(d);
   int const lp = log2pow10(p);
@@ -969,7 +1039,7 @@ inline f64 parse(u64 d, int p) noexcept
   u = unrounded{(u.data >> s) | (u.data & 1)};
   e = e - s;
 
-  if (1075 - e >= 0x7ff) return HUGE_VAL;
+  if (1075 - e >= 0x7ff) return std::numeric_limits<f64>::infinity();
   return pack64(u.round(), -e);
 }
 
@@ -978,13 +1048,14 @@ struct parse_result {
   bool ok;
 };
 
+constexpr bool is_digit(char c) noexcept { return static_cast<unsigned char>(c - '0') <= 9; }
+
 // parse_text parses the decimal string [first, last)
 // and returns the nearest floating point value.
 // It returns {0, false} if the input is malformed.
-inline parse_result parse_text(char const* first, char const* last) noexcept
+YK_FPFMT_CONSTEXPR_FP parse_result parse_text(char const* first, char const* last) noexcept
 {
   parse_result const fail = {0, false};
-  auto const is_digit = [](char c) noexcept { return static_cast<unsigned char>(c - '0') <= 9; };
   std::ptrdiff_t const len = last - first;
 
   // Read digits.
@@ -1032,7 +1103,7 @@ constexpr int skewed(int e) noexcept { return (e * 631305 - 261663) >> 21; }
 // trim_zeros removes trailing zeros from x * 10**p.
 // If x ends in k zeros, trim_zeros returns x/10**k, p+k.
 // It assumes that x ends in at most 16 zeros.
-inline decimal trim_zeros(u64 x, int p) noexcept
+YK_FPFMT_CONSTEXPR14 decimal trim_zeros(u64 x, int p) noexcept
 {
   u64 const max_u64 = ~u64(0);
   u64 const inv5p8 = 0xc767074b22e90e21;  // inverse of 5**8
@@ -1078,7 +1149,7 @@ inline decimal trim_zeros(u64 x, int p) noexcept
 // back to the original f64.
 // f must be finite and non-zero; its sign is ignored.
 // (This is Short in the Go original; "short" is a C++ keyword.)
-inline decimal shortest(f64 f) noexcept
+YK_FPFMT_CONSTEXPR_FP decimal shortest(f64 f) noexcept
 {
   int const min_exp = -1085;
 
@@ -1113,7 +1184,7 @@ inline decimal shortest(f64 f) noexcept
 
 // digits returns the number of decimal digits in d.
 // Unlike the Go original, which returns 0 for d == 0, it returns 1 so that the result can be passed to format.
-inline int digits(u64 d) noexcept
+YK_FPFMT_CONSTEXPR_BITOPS int digits(u64 d) noexcept
 {
   if (d == 0) return 1;
   int const nd = log10pow2(bit_len64(d));
@@ -1139,7 +1210,7 @@ constexpr char const* i2a() noexcept
 // format_base10 formats the decimal representation of u into a[0, nd).
 // The caller is responsible for ensuring that nd is big enough to hold u.
 // If nd is too big, leading zeros will be filled in as needed.
-inline void format_base10(char* a, int nd, u64 u) noexcept
+YK_FPFMT_CONSTEXPR14 void format_base10(char* a, int nd, u64 u) noexcept
 {
   char const* const t = i2a();
   while (nd >= 8) {
@@ -1184,7 +1255,7 @@ inline void format_base10(char* a, int nd, u64 u) noexcept
 // and s must have room for at least nd + 6 characters (nd + 7 if nd > 1).
 // It returns the number of characters written to s. No terminating null is written.
 // (This is Fmt in the Go original.)
-inline int format(char* s, u64 d, int p, int nd) noexcept
+YK_FPFMT_CONSTEXPR14 int format(char* s, u64 d, int p, int nd) noexcept
 {
   char const* const t = i2a();
 
