@@ -67,6 +67,7 @@ if(YK_FPFMT_INSTALL)
     write_basic_package_version_file(
         ${CMAKE_CURRENT_BINARY_DIR}/fpfmt-config-version.cmake
         COMPATIBILITY SameMajorVersion
+        ARCH_INDEPENDENT
     )
 
     install(
