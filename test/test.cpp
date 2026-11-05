@@ -339,6 +339,7 @@ TEST_CASE("digits")
 {
   using yk::fpfmt::digits;
   using yk::fpfmt::u64;
+  CHECK(digits(0) == 1);
   CHECK(digits(1) == 1);
   CHECK(digits(9) == 1);
   CHECK(digits(10) == 2);
@@ -366,6 +367,7 @@ std::string fmt(yk::fpfmt::decimal r)
 TEST_CASE("format")
 {
   using yk::fpfmt::decimal;
+  CHECK(fmt(decimal{0, 0}) == "0e+00");
   CHECK(fmt(decimal{1, 0}) == "1e+00");
   CHECK(fmt(decimal{125, -5}) == "1.25e-03");
   CHECK(fmt(decimal{5, -324}) == "5e-324");
