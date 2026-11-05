@@ -9,6 +9,33 @@
 #include <iostream>
 #include <string>
 
+TEST_CASE("constexpr pure functions")
+{
+  using namespace yk::fpfmt;
+
+  // unrounded{25} is 6.25 (6.0+), unrounded{26} is 6.5, unrounded{27} is 6.5+.
+  static_assert(unrounded{25}.floor() == 6, "");
+  static_assert(unrounded{26}.round_half_down() == 6, "");
+  static_assert(unrounded{26}.round() == 6, "");
+  static_assert(unrounded{30}.round() == 8, "");
+  static_assert(unrounded{26}.round_half_up() == 7, "");
+  static_assert(unrounded{25}.ceil() == 7, "");
+  static_assert(unrounded{60}.nudge(-1).floor() == 14, "");
+  static_assert(unrounded{53}.rsh(2).data == 13, "");
+  static_assert((unrounded{61} / 6).data == 11, "");
+  static_assert(unmin(4).data == 14, "");
+  static_assert(log10pow2(64) == 19, "");
+  static_assert(log10pow2(-1) == -1, "");
+  static_assert(log2pow10(1) == 3, "");
+  static_assert(log2pow10(-1) == -4, "");
+  static_assert(rotr64(0x0123456789abcdef, 4) == 0xf0123456789abcde, "");
+  static_assert(skewed(0) == -1, "");
+  static_assert(skewed(1) == 0, "");
+  static_assert(i2a()[2 * 42] == '4' && i2a()[2 * 42 + 1] == '2', "");
+
+  CHECK(true);
+}
+
 TEST_CASE("unrounded")
 {
   // rounding
