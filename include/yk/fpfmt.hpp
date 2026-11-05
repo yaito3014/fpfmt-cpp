@@ -1112,8 +1112,10 @@ inline decimal shortest(f64 f) noexcept
 }
 
 // digits returns the number of decimal digits in d.
+// Unlike the Go original, which returns 0 for d == 0, it returns 1 so that the result can be passed to format.
 inline int digits(u64 d) noexcept
 {
+  if (d == 0) return 1;
   int const nd = log10pow2(bit_len64(d));
   return nd + (d >= uint64pow10(nd));
 }
