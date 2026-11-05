@@ -17,22 +17,22 @@ using f64 = double;
 struct unrounded {
   u64 data;
 
-  u64 floor() const noexcept { return data >> 2; }
-  u64 round_half_down() const noexcept { return (data + 1) >> 2; }
-  u64 round() const noexcept { return ((data + 1 + ((data >> 2) & 1)) >> 2); }
-  u64 round_half_up() const noexcept { return (data + 2) >> 2; }
-  u64 ceil() const noexcept { return (data + 3) >> 2; }
+  constexpr u64 floor() const noexcept { return data >> 2; }
+  constexpr u64 round_half_down() const noexcept { return (data + 1) >> 2; }
+  constexpr u64 round() const noexcept { return ((data + 1 + ((data >> 2) & 1)) >> 2); }
+  constexpr u64 round_half_up() const noexcept { return (data + 2) >> 2; }
+  constexpr u64 ceil() const noexcept { return (data + 3) >> 2; }
 
-  unrounded nudge(int delta) const noexcept { return unrounded{data + u64(delta)}; }
+  constexpr unrounded nudge(int delta) const noexcept { return unrounded{data + u64(delta)}; }
 
   // rsh returns u >> s, preserving the sticky bit. s must be in [0, 63].
-  unrounded rsh(int s) const noexcept { return unrounded{(data >> s) | (data & 1) | ((data & ((u64(1) << s) - 1)) != 0)}; }
+  constexpr unrounded rsh(int s) const noexcept { return unrounded{(data >> s) | (data & 1) | ((data & ((u64(1) << s) - 1)) != 0)}; }
 
-  friend unrounded operator/(unrounded u, u64 d) noexcept { return unrounded{(u.data / d) | (u.data & 1) | (u.data % d != 0)}; }
+  friend constexpr unrounded operator/(unrounded u, u64 d) noexcept { return unrounded{(u.data / d) | (u.data & 1) | (u.data % d != 0)}; }
 };
 
 // unmin returns the minimum unrounded that rounds to x.
-inline unrounded unmin(u64 x) noexcept { return unrounded{(x << 2) - 2}; }
+constexpr unrounded unmin(u64 x) noexcept { return unrounded{(x << 2) - 2}; }
 
 inline unrounded unround(f64 x) noexcept
 {
@@ -42,10 +42,10 @@ inline unrounded unround(f64 x) noexcept
 }
 
 // log10pow2(x) returns floor(log10(2**x)) = floor(x * log10(2)).
-inline int log10pow2(int x) noexcept { return (x * 78913) >> 18; }
+constexpr int log10pow2(int x) noexcept { return (x * 78913) >> 18; }
 
 // log2pow10(x) returns floor(log2(10**x)) = floor(x * log2(10)).
-inline int log2pow10(int x) noexcept { return (x * 108853) >> 15; }
+constexpr int log2pow10(int x) noexcept { return (x * 108853) >> 15; }
 
 // bit_len64 returns the minimum number of bits required to represent x (0 for x == 0).
 inline int bit_len64(u64 x) noexcept
@@ -64,7 +64,7 @@ inline int bit_len64(u64 x) noexcept
 #endif
 }
 
-inline u64 rotr64(u64 x, int k) noexcept { return (x >> k) | (x << (64 - k)); }
+constexpr u64 rotr64(u64 x, int k) noexcept { return (x >> k) | (x << (64 - k)); }
 
 inline u64 f64_to_bits(f64 f) noexcept
 {
@@ -1000,7 +1000,7 @@ inline parse_result parse_text(char const* first, char const* last) noexcept
 
 // skewed computes the skewed footprint of m * 2**e,
 // which is floor(log10(3/4 * 2**e)) = floor(e*log10(2) - log10(4/3)).
-inline int skewed(int e) noexcept { return (e * 631305 - 261663) >> 21; }
+constexpr int skewed(int e) noexcept { return (e * 631305 - 261663) >> 21; }
 
 // trim_zeros removes trailing zeros from x * 10**p.
 // If x ends in k zeros, trim_zeros returns x/10**k, p+k.
@@ -1093,7 +1093,7 @@ inline int digits(u64 d) noexcept
 
 // i2a is the formatting of 00..99 concatenated,
 // a lookup table for formatting [0, 99].
-inline char const* i2a() noexcept
+constexpr char const* i2a() noexcept
 {
   return "00010203040506070809"
          "10111213141516171819"
