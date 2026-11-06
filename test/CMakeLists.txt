@@ -1,3 +1,7 @@
+option(YK_FPFMT_CI "for CI" OFF)
+
+set(CMAKE_COLOR_DIAGNOSTICS ${YK_FPFMT_CI})
+
 find_package(Catch2 2 REQUIRED)
 
 function(yk_fpfmt_add_test test_name)
