@@ -20,7 +20,15 @@ here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-ivy="$(go -C "$here" list -m -f '{{.Dir}}' rsc.io/fpfmt)/unopt/testdata/test.ivy"
+# go list -m reports no directory for a module that is not in the module cache
+# yet, so download it first.
+go -C "$here" mod download rsc.io/fpfmt
+module_dir=$(go -C "$here" list -m -f '{{.Dir}}' rsc.io/fpfmt)
+if [ -z "$module_dir" ]; then
+    echo "$0: cannot locate the rsc.io/fpfmt module" >&2
+    exit 1
+fi
+ivy="$module_dir/unopt/testdata/test.ivy"
 go -C "$here" run . gen "$work/inputs.txt" "$ivy"
 go -C "$here" run . run "$work/inputs.txt" > "$work/go.out"
 lines=$(wc -l < "$work/go.out")
