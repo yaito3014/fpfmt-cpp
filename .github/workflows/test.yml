@@ -143,6 +143,15 @@ jobs:
       - name: Run test
         run: |
           ctest --test-dir build -C ${{ matrix.build-type }} --output-on-failure
+  # the committed pow10 table is what tools/gen_pow10_table.py renders from
+  # tools/pow10_table.hpp.in
+  generated:
+    name: Generated pow10 table
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the table
+        run: python3 tools/gen_pow10_table.py --check
   # the single header generated from include/ passes the tests by itself,
   # in the minimum standard and in one where everything is constexpr; it is
   # kept as an artifact for anyone who wants the one file
