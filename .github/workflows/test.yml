@@ -18,6 +18,7 @@ on:
       - "test/**/*"
       - "cmake/**/*"
       - "CMakeLists.txt"
+      - ".clang-format"
       - ".github/workflows/**/*"
   pull_request:
     branches:
@@ -143,6 +144,22 @@ jobs:
       - name: Run test
         run: |
           ctest --test-dir build -C ${{ matrix.build-type }} --output-on-failure
+  # the C++ sources match .clang-format, with the clang-format version pinned
+  # because newer versions can lay out the same code differently;
+  # tools/pow10_table.hpp.in is a template, not C++, and is not checked
+  format:
+    name: Format (clang-format 18)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Init Ubuntu
+        run: |
+          echo "set man-db/auto-update false" | sudo debconf-communicate
+          sudo dpkg-reconfigure man-db
+          sudo apt-get update
+          sudo apt-get install -y clang-format-18
+      - name: Check formatting
+        run: git ls-files -z '*.hpp' '*.cpp' | xargs -0 clang-format-18 --dry-run --Werror
   # the results match those of the Go original, rsc.io/fpfmt (pinned in
   # test/go_differential/go.mod), on about 1.4M generated inputs, in the
   # minimum standard and in one where everything is constexpr
