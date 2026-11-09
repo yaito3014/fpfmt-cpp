@@ -341,9 +341,9 @@ TEST_CASE("mul64")
 
 TEST_CASE("mul64 matches portable implementation")
 {
+  using yk::fpfmt::u64;
   using yk::fpfmt::detail::mul64;
   using yk::fpfmt::detail::mul64_portable;
-  using yk::fpfmt::u64;
 
   u64 const edges[] = {0, 1, 2, 0xFFFFFFFF, 0x100000000, 0x8000000000000000, 0xFFFFFFFFFFFFFFFF, 0xcccccccccccccccd};
   for (u64 const x : edges) {
@@ -368,9 +368,9 @@ TEST_CASE("mul64 matches portable implementation")
 
 TEST_CASE("uscale")
 {
+  using yk::fpfmt::u64;
   using yk::fpfmt::detail::log2pow10;
   using yk::fpfmt::detail::prescale;
-  using yk::fpfmt::u64;
   using yk::fpfmt::detail::uscale;
 
   // uscale computes unround(x * 2^e * 10^p) where x is left-justified
@@ -579,8 +579,8 @@ TEST_CASE("fixed_width")
   CHECK(fmt(fixed_width(1.0, 3)) == "1.00e+00");
   CHECK(fmt(fixed_width(0.1, 17)) == "1.0000000000000001e-01");
   CHECK(fmt(fixed_width(0.1, 18)) == "1.00000000000000006e-01");
-  CHECK(fmt(fixed_width(9.5, 1)) == "1e+01");    // round half to even, carries into a new digit
-  CHECK(fmt(fixed_width(8.5, 1)) == "8e+00");    // round half to even
+  CHECK(fmt(fixed_width(9.5, 1)) == "1e+01");  // round half to even, carries into a new digit
+  CHECK(fmt(fixed_width(8.5, 1)) == "8e+00");  // round half to even
   CHECK(fmt(fixed_width(1234.5, 4)) == "1.234e+03");
   CHECK(fmt(fixed_width(99.99, 2)) == "1.0e+02");
 }
@@ -645,19 +645,7 @@ TEST_CASE("parse_text")
   }
 
   char const* const bads[] = {
-      "",
-      ".",
-      "e5",
-      "1e",
-      "1e+",
-      "1e1000",
-      "abc",
-      "1x",
-      "-1",
-      "+1",
-      "12345678901234567890",
-      "1.2345678901234567890",
-      "1.5 ",
+      "", ".", "e5", "1e", "1e+", "1e1000", "abc", "1x", "-1", "+1", "12345678901234567890", "1.2345678901234567890", "1.5 ",
   };
   for (char const* s : bads) {
     CAPTURE(s);

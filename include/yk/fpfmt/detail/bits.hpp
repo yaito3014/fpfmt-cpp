@@ -23,12 +23,30 @@ YK_FPFMT_CONSTEXPR_BITOPS int bit_len64(u64 x) noexcept
   return x == 0 ? 0 : 64 - __builtin_clzll(x);
 #else
   int n = 0;
-  if (x >> 32) { x >>= 32; n += 32; }
-  if (x >> 16) { x >>= 16; n += 16; }
-  if (x >> 8) { x >>= 8; n += 8; }
-  if (x >> 4) { x >>= 4; n += 4; }
-  if (x >> 2) { x >>= 2; n += 2; }
-  if (x >> 1) { x >>= 1; n += 1; }
+  if (x >> 32) {
+    x >>= 32;
+    n += 32;
+  }
+  if (x >> 16) {
+    x >>= 16;
+    n += 16;
+  }
+  if (x >> 8) {
+    x >>= 8;
+    n += 8;
+  }
+  if (x >> 4) {
+    x >>= 4;
+    n += 4;
+  }
+  if (x >> 2) {
+    x >>= 2;
+    n += 2;
+  }
+  if (x >> 1) {
+    x >>= 1;
+    n += 1;
+  }
   return n + int(x);
 #endif
 }
