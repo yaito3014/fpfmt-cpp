@@ -14,14 +14,53 @@ add_library(fpfmt INTERFACE)
 
 target_compile_features(fpfmt INTERFACE cxx_std_11)
 
-file(GLOB_RECURSE YK_FPFMT_PUBLIC_HEADERS CONFIGURE_DEPENDS include/*.hpp)
+# The option builds and installs the library as one file, generated from
+# include/ by tools/amalgamate.py into the build tree, instead of the parts
+option(
+    YK_FPFMT_SINGLE_INCLUDE
+    "use fpfmt as a single header generated from include/ (needs Python 3)"
+    OFF
+)
+if(YK_FPFMT_SINGLE_INCLUDE)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(YK_FPFMT_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/single_include)
+    file(
+        GLOB_RECURSE YK_FPFMT_PARTS
+        CONFIGURE_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp
+    )
+    # regenerated whenever a part or the script changes, through a reconfigure
+    set_property(
+        DIRECTORY
+        APPEND
+        PROPERTY
+            CMAKE_CONFIGURE_DEPENDS
+                ${YK_FPFMT_PARTS}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/amalgamate.py
+    )
+    execute_process(
+        COMMAND
+            ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/amalgamate.py
+            ${YK_FPFMT_INCLUDE_DIR}/yk/fpfmt.hpp
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+else()
+    set(YK_FPFMT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
+endif()
+
+file(
+    GLOB_RECURSE YK_FPFMT_PUBLIC_HEADERS
+    CONFIGURE_DEPENDS
+    ${YK_FPFMT_INCLUDE_DIR}/*.hpp
+)
 
 target_sources(
     fpfmt
     INTERFACE
         FILE_SET fpfmt_public_headers
             TYPE HEADERS
-            BASE_DIRS include
+            BASE_DIRS ${YK_FPFMT_INCLUDE_DIR}
             FILES ${YK_FPFMT_PUBLIC_HEADERS}
 )
 

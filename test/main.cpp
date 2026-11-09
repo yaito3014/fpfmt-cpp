@@ -19,6 +19,7 @@
 TEST_CASE("constexpr pure functions")
 {
   using namespace yk::fpfmt;
+  using namespace yk::fpfmt::detail;
 
   // unrounded{25} is 6.25 (6.0+), unrounded{26} is 6.5, unrounded{27} is 6.5+.
   static_assert(unrounded{25}.floor() == 6, "");
@@ -83,6 +84,7 @@ constexpr yk::fpfmt::parse_result parse_cstr(char const* s)
 TEST_CASE("constexpr table and float functions")
 {
   using namespace yk::fpfmt;
+  using namespace yk::fpfmt::detail;
 
   // C++11
   static_assert(unround(6).data == 24, "");
@@ -149,7 +151,7 @@ TEST_CASE("unrounded")
 {
   // rounding
   {
-    yk::fpfmt::unrounded const u = yk::fpfmt::unround(6);
+    yk::fpfmt::detail::unrounded const u = yk::fpfmt::detail::unround(6);
     CHECK(u.floor() == 6);
     CHECK(u.round_half_down() == 6);
     CHECK(u.round() == 6);
@@ -157,7 +159,7 @@ TEST_CASE("unrounded")
     CHECK(u.ceil() == 6);
   }
   {
-    yk::fpfmt::unrounded const u = yk::fpfmt::unround(6.25);
+    yk::fpfmt::detail::unrounded const u = yk::fpfmt::detail::unround(6.25);
     CHECK(u.floor() == 6);
     CHECK(u.round_half_down() == 6);
     CHECK(u.round() == 6);
@@ -165,7 +167,7 @@ TEST_CASE("unrounded")
     CHECK(u.ceil() == 7);
   }
   {
-    yk::fpfmt::unrounded const u = yk::fpfmt::unround(6.5);
+    yk::fpfmt::detail::unrounded const u = yk::fpfmt::detail::unround(6.5);
     CHECK(u.floor() == 6);
     CHECK(u.round_half_down() == 6);
     CHECK(u.round() == 6);
@@ -173,7 +175,7 @@ TEST_CASE("unrounded")
     CHECK(u.ceil() == 7);
   }
   {
-    yk::fpfmt::unrounded const u = yk::fpfmt::unround(6.75);
+    yk::fpfmt::detail::unrounded const u = yk::fpfmt::detail::unround(6.75);
     CHECK(u.floor() == 6);
     CHECK(u.round_half_down() == 7);
     CHECK(u.round() == 7);
@@ -183,27 +185,27 @@ TEST_CASE("unrounded")
 
   // division
   {
-    yk::fpfmt::unrounded const u = yk::fpfmt::unround(15.1);
+    yk::fpfmt::detail::unrounded const u = yk::fpfmt::detail::unround(15.1);
     CHECK((u / 6).round() == 3);
   }
 
   // nudging
   {
-    yk::fpfmt::unrounded const u = yk::fpfmt::unround(15);
+    yk::fpfmt::detail::unrounded const u = yk::fpfmt::detail::unround(15);
     CHECK(u.nudge(-1).floor() == 14);
     CHECK(u.floor() == 15);
     CHECK(u.ceil() == 15);
     CHECK(u.nudge(+1).ceil() == 16);
   }
   {
-    yk::fpfmt::unrounded const u = yk::fpfmt::unround(15.1);
+    yk::fpfmt::detail::unrounded const u = yk::fpfmt::detail::unround(15.1);
     CHECK(u.nudge(-1).floor() == 15);
     CHECK(u.floor() == 15);
     CHECK(u.ceil() == 16);
     CHECK(u.nudge(+1).ceil() == 16);
   }
   {
-    yk::fpfmt::unrounded const u = yk::fpfmt::unround(15.9);
+    yk::fpfmt::detail::unrounded const u = yk::fpfmt::detail::unround(15.9);
     CHECK(u.nudge(-1).floor() == 15);
     CHECK(u.floor() == 15);
     CHECK(u.ceil() == 16);
@@ -213,8 +215,8 @@ TEST_CASE("unrounded")
 
 TEST_CASE("prescale")
 {
-  using yk::fpfmt::log2pow10;
-  using yk::fpfmt::prescale;
+  using yk::fpfmt::detail::log2pow10;
+  using yk::fpfmt::detail::prescale;
 
   // prescale returns pm (128-bit power of 10) and shift s
   // pm values come from pow10table, s = -(e + lp + 3)
@@ -281,7 +283,7 @@ TEST_CASE("prescale")
 
 TEST_CASE("mul64")
 {
-  using yk::fpfmt::mul64;
+  using yk::fpfmt::detail::mul64;
 
   // Simple cases
   {
@@ -339,8 +341,8 @@ TEST_CASE("mul64")
 
 TEST_CASE("mul64 matches portable implementation")
 {
-  using yk::fpfmt::mul64;
-  using yk::fpfmt::mul64_portable;
+  using yk::fpfmt::detail::mul64;
+  using yk::fpfmt::detail::mul64_portable;
   using yk::fpfmt::u64;
 
   u64 const edges[] = {0, 1, 2, 0xFFFFFFFF, 0x100000000, 0x8000000000000000, 0xFFFFFFFFFFFFFFFF, 0xcccccccccccccccd};
@@ -366,10 +368,10 @@ TEST_CASE("mul64 matches portable implementation")
 
 TEST_CASE("uscale")
 {
-  using yk::fpfmt::log2pow10;
-  using yk::fpfmt::prescale;
+  using yk::fpfmt::detail::log2pow10;
+  using yk::fpfmt::detail::prescale;
   using yk::fpfmt::u64;
-  using yk::fpfmt::uscale;
+  using yk::fpfmt::detail::uscale;
 
   // uscale computes unround(x * 2^e * 10^p) where x is left-justified
   // x = 0x8000000000000000 represents 2^63, so with e = -63 we get x * 2^e = 1
@@ -451,6 +453,7 @@ TEST_CASE("uscale")
 TEST_CASE("uscale low-bits mask")
 {
   using namespace yk::fpfmt;
+  using namespace yk::fpfmt::detail;
 
   // Regression test: Go's `hi&(1<<(c.s&63)-1)` is `hi & ((1 << s) - 1)` (Go's << binds tighter than -).
   // Testing only bit s-1 instead made this case round 2.58e-26 down to 2e-26.
@@ -463,6 +466,7 @@ TEST_CASE("uscale low-bits mask")
 TEST_CASE("unpack64 / pack64")
 {
   using namespace yk::fpfmt;
+  using namespace yk::fpfmt::detail;
 
   {
     unpacked const u = unpack64(1.0);
@@ -491,7 +495,7 @@ TEST_CASE("unpack64 / pack64")
 
 TEST_CASE("unrounded rsh")
 {
-  using yk::fpfmt::unround;
+  using yk::fpfmt::detail::unround;
   CHECK(unround(12).rsh(1).data == unround(6).data);
   CHECK(unround(13).rsh(1).data == unround(6.5).data);
   CHECK(unround(13).rsh(2).data == unround(3.25).data);  // 3.25 -> 3.0+
@@ -510,7 +514,7 @@ TEST_CASE("digits")
   CHECK(digits(100) == 3);
   CHECK(digits(12345678901234567890u) == 20);
   for (int n = 1; n <= 19; n++) {
-    u64 const p = yk::fpfmt::uint64pow10(n);
+    u64 const p = yk::fpfmt::detail::uint64pow10(n);
     CHECK(digits(p - 1) == n);
     CHECK(digits(p) == n + 1);
   }
@@ -542,6 +546,7 @@ TEST_CASE("format")
 TEST_CASE("shortest")
 {
   using namespace yk::fpfmt;
+  using namespace yk::fpfmt::detail;
 
   CHECK(fmt(shortest(1.0)) == "1e+00");
   CHECK(fmt(shortest(0.1)) == "1e-01");
@@ -563,6 +568,7 @@ TEST_CASE("shortest")
 TEST_CASE("fixed_width")
 {
   using namespace yk::fpfmt;
+  using namespace yk::fpfmt::detail;
 
   {
     decimal const r = fixed_width(std::ldexp(0x118352262653f8, 19 - 52), 7);  // 0x1.18352262653f8p+19
@@ -582,6 +588,7 @@ TEST_CASE("fixed_width")
 TEST_CASE("parse")
 {
   using namespace yk::fpfmt;
+  using namespace yk::fpfmt::detail;
 
   CHECK(parse(0, 0) == 0.0);
   CHECK(parse(1, 0) == 1.0);
@@ -608,6 +615,7 @@ TEST_CASE("parse")
 TEST_CASE("parse_text")
 {
   using namespace yk::fpfmt;
+  using namespace yk::fpfmt::detail;
 
   struct ok_case {
     char const* s;
@@ -677,6 +685,7 @@ struct splitmix64 {
 void check_against_libc(double f)
 {
   using namespace yk::fpfmt;
+  using namespace yk::fpfmt::detail;
   CAPTURE(f);
   char want[64];
 
@@ -706,6 +715,7 @@ void check_against_libc(double f)
 TEST_CASE("against libc")
 {
   using namespace yk::fpfmt;
+  using namespace yk::fpfmt::detail;
 
   for (int e = -1074; e <= 1023; e++) check_against_libc(std::ldexp(1.0, e));
   for (int p = -323; p <= 308; p++) check_against_libc(std::strtod(("1e" + std::to_string(p)).c_str(), nullptr));
