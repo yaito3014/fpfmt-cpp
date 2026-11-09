@@ -102,6 +102,8 @@ namespace fpfmt {
 using u64 = std::uint64_t;
 using f64 = double;
 
+namespace detail {
+
 // __SIZEOF_INT128__ is defined by GCC, Clang (including clang-cl), and compilers based on them,
 // only on targets where unsigned __int128 is usable.
 // __extension__ silences -Wpedantic's "ISO C++ does not support '__int128'".
@@ -1028,6 +1030,8 @@ YK_FPFMT_CONSTEXPR_MUL64 unrounded uscale(u64 x, scaler c) noexcept
   return unrounded{(c.s < 64 ? hm.high >> c.s : 0) | u64(sticky)};
 }
 
+}  // namespace detail
+
 // decimal represents the value d * 10**p.
 struct decimal {
   u64 d;
@@ -1039,11 +1043,11 @@ struct decimal {
 YK_FPFMT_CONSTEXPR_FP decimal fixed_width(f64 f, int n) noexcept
 {
   assert(n <= 18 && "too many digits");
-  unpacked const up = unpack64(f);
-  int p = n - 1 - log10pow2(up.e + 63);
-  unrounded const u = uscale(up.m, prescale(up.e, p, log2pow10(p)));
+  detail::unpacked const up = detail::unpack64(f);
+  int p = n - 1 - detail::log10pow2(up.e + 63);
+  detail::unrounded const u = detail::uscale(up.m, detail::prescale(up.e, p, detail::log2pow10(p)));
   u64 d = u.round();
-  if (d >= uint64pow10(n)) {
+  if (d >= detail::uint64pow10(n)) {
     d = (u / 10).round();
     p = p - 1;
   }
@@ -1058,26 +1062,26 @@ YK_FPFMT_CONSTEXPR_FP decimal fixed_width(f64 f, int n) noexcept
 YK_FPFMT_CONSTEXPR_FP f64 parse(u64 d, int p) noexcept
 {
   assert(d <= 10000000000000000000u && "too many digits");
-  if (d == 0 || p < pow10_min) return 0;  // d * 10**p < 1e20 * 1e-349 rounds to 0
-  if (p > pow10_max) return std::numeric_limits<f64>::infinity();
+  if (d == 0 || p < detail::pow10_min) return 0;  // d * 10**p < 1e20 * 1e-349 rounds to 0
+  if (p > detail::pow10_max) return std::numeric_limits<f64>::infinity();
 
-  int const b = bit_len64(d);
-  int const lp = log2pow10(p);
+  int const b = detail::bit_len64(d);
+  int const lp = detail::log2pow10(p);
   int e = 53 - b - lp;
   if (e > 1074) e = 1074;
-  unrounded u = uscale(d << (64 - b), prescale(e - (64 - b), p, lp));
+  detail::unrounded u = detail::uscale(d << (64 - b), detail::prescale(e - (64 - b), p, lp));
 
   // This block is branch-free code for:
   //	if (u.round() >= 1<<53) {
   //		u = u.rsh(1);
   //		e = e - 1;
   //	}
-  int const s = u.data >= unmin(u64(1) << 53).data;
-  u = unrounded{(u.data >> s) | (u.data & 1)};
+  int const s = u.data >= detail::unmin(u64(1) << 53).data;
+  u = detail::unrounded{(u.data >> s) | (u.data & 1)};
   e = e - s;
 
   if (1075 - e >= 0x7ff) return std::numeric_limits<f64>::infinity();
-  return pack64(u.round(), -e);
+  return detail::pack64(u.round(), -e);
 }
 
 struct parse_result {
@@ -1085,7 +1089,11 @@ struct parse_result {
   bool ok;
 };
 
+namespace detail {
+
 constexpr bool is_digit(char c) noexcept { return static_cast<unsigned char>(c - '0') <= 9; }
+
+}  // namespace detail
 
 // parse_text parses the decimal string [first, last)
 // and returns the nearest floating point value.
@@ -1100,11 +1108,11 @@ YK_FPFMT_CONSTEXPR_FP parse_result parse_text(char const* first, char const* las
   u64 d = 0;     // decimal value of digits
   int frac = 0;  // count of digits after decimal point
   std::ptrdiff_t i = 0;
-  for (; i < len && is_digit(first[i]); i++) d = d * 10 + u64(first[i] - '0');
+  for (; i < len && detail::is_digit(first[i]); i++) d = d * 10 + u64(first[i] - '0');
   if (i > max_digits) return fail;  // too many digits
   if (i < len && first[i] == '.') {
     i++;
-    for (; i < len && is_digit(first[i]); i++) {
+    for (; i < len && detail::is_digit(first[i]); i++) {
       d = d * 10 + u64(first[i] - '0');
       frac++;
     }
@@ -1126,12 +1134,14 @@ YK_FPFMT_CONSTEXPR_FP parse_result parse_text(char const* first, char const* las
       }
     }
     if (i >= len || len - i > 3) return fail;  // missing or too large exponent
-    for (; i < len && is_digit(first[i]); i++) p = p * 10 + (first[i] - '0');
+    for (; i < len && detail::is_digit(first[i]); i++) p = p * 10 + (first[i] - '0');
     p *= sign;
   }
   if (i != len) return fail;  // junk on end
   return parse_result{parse(d, p - frac), true};
 }
+
+namespace detail {
 
 // skewed computes the skewed footprint of m * 2**e,
 // which is floor(log10(3/4 * 2**e)) = floor(e*log10(2) - log10(4/3)).
@@ -1181,6 +1191,8 @@ YK_FPFMT_CONSTEXPR14 decimal trim_zeros(u64 x, int p) noexcept
   return decimal{x, p};
 }
 
+}  // namespace detail
+
 // shortest computes the shortest formatting of f as d * 10**p,
 // using as few digits as possible that will still round trip
 // back to the original f64.
@@ -1190,7 +1202,7 @@ YK_FPFMT_CONSTEXPR_FP decimal shortest(f64 f) noexcept
 {
   int const min_exp = -1085;
 
-  unpacked const up = unpack64(f);
+  detail::unpacked const up = detail::unpack64(f);
   u64 const m = up.m;
   int const e = up.e;
 
@@ -1198,24 +1210,24 @@ YK_FPFMT_CONSTEXPR_FP decimal shortest(f64 f) noexcept
   u64 lo;
   int z = 11;  // extra zero bits at bottom of m; 11 for 53-bit m
   if (m == u64(1) << 63 && e > min_exp) {
-    p = -skewed(e + z);
+    p = -detail::skewed(e + z);
     lo = m - (u64(1) << (z - 2));  // lo = m - 1/4 * 2**(e+z)
   } else {
     if (e < min_exp) z = 11 + (min_exp - e);
-    p = -log10pow2(e + z);
+    p = -detail::log10pow2(e + z);
     lo = m - (u64(1) << (z - 1));  // lo = m - 1/2 * 2**(e+z)
   }
   u64 const hi = m + (u64(1) << (z - 1));  // hi = m + 1/2 * 2**(e+z)
   int const odd = int(m >> z) & 1;
 
-  scaler const pre = prescale(e, p, log2pow10(p));
-  u64 const dmin = uscale(lo, pre).nudge(+odd).ceil();
-  u64 const dmax = uscale(hi, pre).nudge(-odd).floor();
+  detail::scaler const pre = detail::prescale(e, p, detail::log2pow10(p));
+  u64 const dmin = detail::uscale(lo, pre).nudge(+odd).ceil();
+  u64 const dmax = detail::uscale(hi, pre).nudge(-odd).floor();
 
   u64 d = dmax / 10;
-  if (d * 10 >= dmin) return trim_zeros(d, -(p - 1));
+  if (d * 10 >= dmin) return detail::trim_zeros(d, -(p - 1));
   d = dmin;
-  if (d < dmax) d = uscale(m, pre).round();
+  if (d < dmax) d = detail::uscale(m, pre).round();
   return decimal{d, -p};
 }
 
@@ -1224,9 +1236,11 @@ YK_FPFMT_CONSTEXPR_FP decimal shortest(f64 f) noexcept
 YK_FPFMT_CONSTEXPR_BITOPS int digits(u64 d) noexcept
 {
   if (d == 0) return 1;
-  int const nd = log10pow2(bit_len64(d));
-  return nd + (d >= uint64pow10(nd));
+  int const nd = detail::log10pow2(detail::bit_len64(d));
+  return nd + (d >= detail::uint64pow10(nd));
 }
+
+namespace detail {
 
 // i2a is the formatting of 00..99 concatenated,
 // a lookup table for formatting [0, 99].
@@ -1287,6 +1301,8 @@ YK_FPFMT_CONSTEXPR14 void format_base10(char* a, int nd, u64 u) noexcept
   }
 }
 
+}  // namespace detail
+
 // format formats d * 10**p into s in exponential notation (e.g. "1.25e-03").
 // The caller must pass nd set to the number of digits in d (see digits()),
 // and s must have room for at least nd + 6 characters (nd + 7 if nd > 1).
@@ -1294,10 +1310,10 @@ YK_FPFMT_CONSTEXPR14 void format_base10(char* a, int nd, u64 u) noexcept
 // (This is Fmt in the Go original.)
 YK_FPFMT_CONSTEXPR14 int format(char* s, u64 d, int p, int nd) noexcept
 {
-  char const* const t = i2a();
+  char const* const t = detail::i2a();
 
   // Put digits into s, leaving room for decimal point.
-  format_base10(s + 1, nd, d);
+  detail::format_base10(s + 1, nd, d);
   p += nd - 1;
 
   // Move first digit up and insert decimal point.
