@@ -143,6 +143,40 @@ jobs:
       - name: Run test
         run: |
           ctest --test-dir build -C ${{ matrix.build-type }} --output-on-failure
+  # the results match those of the Go original, rsc.io/fpfmt (pinned in
+  # test/go_differential/go.mod), on about 1.4M generated inputs, in the
+  # minimum standard and in one where everything is constexpr
+  go-differential:
+    name: Differential test against Go (GCC 14 on ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: test/go_differential/go.mod
+          cache-dependency-path: test/go_differential/go.sum
+      - name: Init Ubuntu
+        run: |
+          echo "set man-db/auto-update false" | sudo debconf-communicate
+          sudo dpkg-reconfigure man-db
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-14
+      - name: Build
+        run: |
+          for cxx in 11 20; do
+            cmake -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_CXX_STANDARD=$cxx \
+              -DCMAKE_CXX_COMPILER=g++-14 \
+              -DYK_FPFMT_CI=ON \
+              -Bbuild-$cxx .
+            cmake --build build-$cxx --target yk_fpfmt_go_differential
+          done
+      - name: Compare with Go
+        run: >
+          test/go_differential/run.sh
+          build-11/test/yk_fpfmt_go_differential
+          build-20/test/yk_fpfmt_go_differential
   # the committed pow10 table is what tools/gen_pow10_table.py renders from
   # tools/pow10_table.hpp.in
   generated:

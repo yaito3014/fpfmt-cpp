@@ -14,6 +14,11 @@ endfunction()
 
 yk_fpfmt_add_test(main)
 
+# The C++ side of the differential test against the Go original, run by
+# test/go_differential/run.sh rather than ctest, since it needs Go
+add_executable(yk_fpfmt_go_differential go_differential.cpp)
+target_link_libraries(yk_fpfmt_go_differential PRIVATE yk::fpfmt)
+
 # Every part of the split header compiles on its own, in the library's
 # minimum standard: one translation unit per header, including it twice
 if(NOT YK_FPFMT_SINGLE_INCLUDE)
